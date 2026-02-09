@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Professor Tux — Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0e14;
+  --bg-secondary: #0f1319;
+  --bg-tertiary: #151b24;
+  --bg-card: #121820;
+  --bg-input: #0d1117;
+  --bg-hover: #1a2332;
+  --border: #1e2a3a;
+  --border-active: #2d4a6f;
+  --text-primary: #c8d6e5;
+  --text-secondary: #6b7d93;
+  --text-muted: #3d4f63;
+  --accent-cyan: #00e5ff;
+  --accent-cyan-dim: rgba(0,229,255,0.15);
+  --accent-green: #00ff88;
+  --accent-green-dim: rgba(0,255,136,0.1);
+  --accent-amber: #ffb300;
+  --accent-amber-dim: rgba(255,179,0,0.1);
+  --accent-red: #ff4757;
+  --accent-red-dim: rgba(255,71,87,0.1);
+  --accent-purple: #a855f7;
+  --font-mono: 'JetBrains Mono','IBM Plex Mono',monospace;
+  --radius: 6px;
+  --radius-lg: 10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font-mono);background:var(--bg-primary);color:var(--text-primary);font-size:13px;line-height:1.6}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ── Login ─────────────────────────────────────── */
+.login-overlay{position:fixed;inset:0;background:var(--bg-primary);display:flex;align-items:center;justify-content:center;z-index:1000;transition:opacity .4s,visibility .4s}
+.login-overlay.hidden{opacity:0;visibility:hidden;pointer-events:none}
+.login-box{width:380px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);padding:40px 32px;text-align:center}
+.login-logo{width:100px;height:100px;border-radius:16px;margin:0 auto 16px;object-fit:contain;filter:drop-shadow(0 0 20px rgba(0,229,255,.2))}
+.login-title{font-size:18px;font-weight:600;margin-bottom:4px}
+.login-sub{font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:28px}
+.login-field{width:100%;padding:11px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-mono);font-size:13px;margin-bottom:12px;transition:border-color .2s}
+.login-field:focus{outline:none;border-color:var(--accent-cyan);box-shadow:0 0 0 2px var(--accent-cyan-dim)}
+.login-field::placeholder{color:var(--text-muted)}
+.login-btn{width:100%;padding:12px;background:linear-gradient(135deg,rgba(0,229,255,.12),rgba(0,255,136,.08));border:1px solid rgba(0,229,255,.3);border-radius:var(--radius);color:var(--accent-cyan);font-family:var(--font-mono);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;margin-top:4px}
+.login-btn:hover{background:linear-gradient(135deg,rgba(0,229,255,.2),rgba(0,255,136,.14));box-shadow:0 0 20px rgba(0,229,255,.15)}
+.login-error{color:var(--accent-red);font-size:11px;margin-top:10px;min-height:16px}
+
+/* ── Admin layout ──────────────────────────────── */
+.admin{display:none;min-height:100vh}
+.admin.visible{display:block}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:var(--bg-secondary);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-logo{width:36px;height:36px;border-radius:8px;object-fit:contain}
+.topbar-title{font-size:15px;font-weight:600}
+.topbar-badge{padding:3px 10px;background:var(--accent-red-dim);border:1px solid rgba(255,71,87,.2);border-radius:20px;font-size:10px;color:var(--accent-red);font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent-green);box-shadow:0 0 6px rgba(0,255,136,.5);animation:pulse 2s infinite}
+.status-dot.offline{background:var(--accent-red);box-shadow:0 0 6px rgba(255,71,87,.5);animation:none}
+.status-dot.loading{background:var(--accent-amber);box-shadow:0 0 6px rgba(255,179,0,.5)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.logout-btn{padding:6px 14px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);font-family:var(--font-mono);font-size:11px;cursor:pointer;transition:all .15s}
+.logout-btn:hover{border-color:var(--accent-red);color:var(--accent-red)}
+
+/* Dashboard */
+.dashboard{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:24px 28px;max-width:1200px}
+.card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden}
+.card.full-width{grid-column:1/-1}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-secondary);display:flex;align-items:center;gap:8px}
+.card-body{padding:18px}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;grid-column:1/-1}
+.stat-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px}
+.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:6px}
+.stat-value{font-size:24px;font-weight:700}
+.stat-value.cyan{color:var(--accent-cyan)}
+.stat-value.green{color:var(--accent-green)}
+.stat-value.amber{color:var(--accent-amber)}
+.stat-value.purple{color:var(--accent-purple)}
+
+/* Mode grid — dynamically generated */
+.mode-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.mode-card{padding:18px;border:2px solid var(--border);border-radius:var(--radius-lg);cursor:pointer;transition:all .25s;text-align:center}
+.mode-card:hover{border-color:var(--border-active);background:var(--bg-hover)}
+.mode-card.active{border-color:var(--mode-color,var(--accent-cyan));background:color-mix(in srgb,var(--mode-color,var(--accent-cyan)) 8%,transparent)}
+.mode-card .icon{font-size:28px;margin-bottom:8px}
+.mode-card .name{font-size:14px;font-weight:600;margin-bottom:4px}
+.mode-card.active .name{color:var(--mode-color,var(--accent-cyan))}
+.mode-card .desc{font-size:11px;color:var(--text-secondary);line-height:1.5}
+.reload-btn{padding:4px 10px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-secondary);font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .15s}
+.reload-btn:hover{border-color:var(--accent-cyan);color:var(--accent-cyan)}
+
+/* Config form */
+.config-form{display:flex;flex-direction:column;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);font-weight:600}
+.form-input{width:100%;padding:9px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-family:var(--font-mono);font-size:12px;transition:border-color .2s}
+.form-input:focus{outline:none;border-color:var(--accent-cyan);box-shadow:0 0 0 2px var(--accent-cyan-dim)}
+.form-input::placeholder{color:var(--text-muted)}
+.form-check{display:flex;align-items:center;gap:8px;cursor:pointer}
+.form-check input[type=checkbox]{accent-color:var(--accent-cyan);width:15px;height:15px}
+.form-check span{font-size:12px;color:var(--text-secondary)}
+.save-btn{padding:10px 20px;background:linear-gradient(135deg,rgba(0,229,255,.12),rgba(0,255,136,.08));border:1px solid rgba(0,229,255,.3);border-radius:var(--radius);color:var(--accent-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;align-self:flex-start}
+.save-btn:hover{background:linear-gradient(135deg,rgba(0,229,255,.2),rgba(0,255,136,.14));box-shadow:0 0 15px rgba(0,229,255,.1)}
+
+/* Upload */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;cursor:pointer;transition:all .25s;margin-bottom:16px}
+.upload-zone:hover{border-color:var(--accent-cyan);background:var(--accent-cyan-dim)}
+.upload-zone.dragging{border-color:var(--accent-green);background:var(--accent-green-dim)}
+.upload-zone .icon{font-size:32px;margin-bottom:8px}
+.upload-zone .text{font-size:12px;color:var(--text-secondary)}
+.upload-zone .text span{color:var(--accent-cyan);font-weight:500}
+.upload-zone .formats{font-size:10px;color:var(--text-muted);margin-top:6px}
+.file-input{display:none}
+.upload-progress{height:3px;background:var(--bg-input);border-radius:2px;margin-bottom:16px;overflow:hidden;display:none}
+.upload-progress.active{display:block}
+.upload-progress-bar{height:100%;background:linear-gradient(90deg,var(--accent-cyan),var(--accent-green));border-radius:2px;width:0%;transition:width .3s}
+
+/* File table */
+.file-table{width:100%;border-collapse:collapse}
+.file-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);padding:8px 10px;border-bottom:1px solid var(--border);font-weight:600}
+.file-table td{padding:10px;border-bottom:1px solid rgba(30,42,58,.5);font-size:12px;color:var(--text-secondary)}
+.file-table tr:hover td{background:var(--bg-hover)}
+.file-name{color:var(--text-primary);font-weight:500}
+.file-course{color:var(--accent-purple)}
+.file-badge{display:inline-block;padding:2px 8px;background:var(--accent-green-dim);border:1px solid rgba(0,255,136,.15);border-radius:20px;font-size:10px;color:var(--accent-green)}
+.delete-btn{padding:4px 10px;background:var(--accent-red-dim);border:1px solid rgba(255,71,87,.15);border-radius:var(--radius);color:var(--accent-red);font-family:var(--font-mono);font-size:10px;cursor:pointer;transition:all .15s}
+.delete-btn:hover{background:rgba(255,71,87,.2);border-color:rgba(255,71,87,.3)}
+.empty-state{text-align:center;padding:30px;color:var(--text-muted);font-size:12px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:12px;box-shadow:0 4px 20px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:all .3s;z-index:999;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.error{border-color:rgba(255,71,87,.3);color:var(--accent-red)}
+.toast.success{border-color:rgba(0,255,136,.3);color:var(--accent-green)}
+@media(max-width:768px){.dashboard{grid-template-columns:1fr}.stats-row{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <img class="login-logo" src="/static/logo.png" alt="Professor Tux">
+    <div class="login-title">Professor Tux</div>
+    <div class="login-sub">Admin Panel</div>
+    <input class="login-field" id="loginUser" type="text" placeholder="Username" autofocus
+           onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+    <input class="login-field" id="loginPass" type="password" placeholder="Password"
+           onkeydown="if(event.key==='Enter')attemptLogin()">
+    <button class="login-btn" onclick="attemptLogin()">🔐 Authenticate</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ADMIN -->
+<div class="admin" id="adminPanel">
+  <div class="topbar">
+    <div class="topbar-left">
+      <img class="topbar-logo" src="/static/logo.png" alt="Logo">
+      <span class="topbar-title">Professor Tux</span>
+      <span class="topbar-badge">Admin</span>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-status">
+        <div class="status-dot loading" id="statusDot"></div>
+        <span id="statusText">Checking…</span>
+      </div>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value cyan" id="statStatus">—</div></div>
+      <div class="stat-card"><div class="stat-label">Documents</div><div class="stat-value green" id="statDocs">0</div></div>
+      <div class="stat-card"><div class="stat-label">Chunks</div><div class="stat-value amber" id="statChunks">0</div></div>
+      <div class="stat-card"><div class="stat-label">Active Mode</div><div class="stat-value purple" id="statMode">—</div></div>
+    </div>
+
+    <!-- Modes — dynamic -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎯 Teaching Mode</div>
+        <button class="reload-btn" onclick="reloadModes()">↻ Reload Modes</button>
+      </div>
+      <div class="card-body">
+        <div class="mode-grid" id="modeGrid"><!-- filled by JS --></div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚙️ Session Config</div></div>
+      <div class="card-body">
+        <div class="config-form">
+          <div class="form-group"><div class="form-label">Default Topic</div><input class="form-input" id="cfgTopic" type="text" placeholder="e.g., SQL Injection, XSS"></div>
+          <div class="form-group"><div class="form-label">Course Filter</div><input class="form-input" id="cfgCourse" type="text" placeholder="e.g., CSCI-4390 Network Security"></div>
+          <label class="form-check"><input type="checkbox" id="cfgUseLectures" checked><span>Enable lecture slide context (RAG)</span></label>
+          <button class="save-btn" onclick="saveConfig()">💾 Save Configuration</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lectures -->
+    <div class="card full-width">
+      <div class="card-header">
+        <div class="card-title">📚 Lecture Slides</div>
+        <span style="font-size:11px;color:var(--text-muted)" id="fileCount">0 files</span>
+      </div>
+      <div class="card-body">
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')" ondrop="handleDrop(event)">
+          <div class="icon">📄</div>
+          <div class="text">Drop files here or <span>click to browse</span></div>
+          <div class="formats">PDF · PPTX · TXT · MD</div>
+        </div>
+        <input class="file-input" id="fileInput" type="file" multiple accept=".pdf,.pptx,.ppt,.txt,.md" onchange="handleFiles(event)">
+        <div class="upload-progress" id="uploadProgress"><div class="upload-progress-bar" id="uploadProgressBar"></div></div>
+        <table class="file-table"><thead><tr><th>Filename</th><th>Course</th><th>Pages</th><th>Chunks</th><th>Uploaded</th><th></th></tr></thead><tbody id="fileTableBody"><tr><td colspan="6" class="empty-state">No lecture slides uploaded yet</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.origin;
+let adminConfig = { mode:'recall', topic:'', courseFilter:'', useLectures:true };
+let allModes = []; // fetched from /modes
+
+// ── Auth ──────────────────────────────────────────
+function attemptLogin() {
+  var user = document.getElementById('loginUser').value.trim();
+  var pass = document.getElementById('loginPass').value;
+  fetch(API + '/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user,password:pass}) })
+    .then(function(r) { if(!r.ok) throw 0; return r.json(); })
+    .then(function(d) { sessionStorage.setItem('admin_token',d.token); show(); })
+    .catch(function() { document.getElementById('loginError').textContent='✕ Invalid credentials'; });
+}
+function logout() { sessionStorage.removeItem('admin_token'); hide(); }
+function show() { document.getElementById('loginOverlay').classList.add('hidden'); document.getElementById('adminPanel').classList.add('visible'); loadDashboard(); }
+function hide() { document.getElementById('loginOverlay').classList.remove('hidden'); document.getElementById('adminPanel').classList.remove('visible'); }
+function authH() { return { 'Authorization':'Bearer ' + sessionStorage.getItem('admin_token'), 'Content-Type':'application/json' }; }
+if (sessionStorage.getItem('admin_token')) { fetch(API + '/admin/verify',{headers:authH()}).then(function(r){if(r.ok)show();}); }
+
+// ── Dashboard ─────────────────────────────────────
+async function loadDashboard() { await checkHealth(); await loadModes(); await loadConfig(); await loadFiles(); }
+
+async function checkHealth() {
+  var dot = document.getElementById('statusDot');
+  var txt = document.getElementById('statusText');
+  var stat = document.getElementById('statStatus');
+  try {
+    var resp = await fetch(API + '/health');
+    var d = await resp.json();
+    if(d.model_loaded){ dot.className='status-dot'; txt.textContent='Online'; stat.textContent='Online'; document.getElementById('statChunks').textContent=d.total_lecture_chunks; }
+    else { dot.className='status-dot loading'; txt.textContent='Loading…'; stat.textContent='Loading'; setTimeout(checkHealth,5000); }
+  } catch(e){ dot.className='status-dot offline'; txt.textContent='Offline'; stat.textContent='Offline'; setTimeout(checkHealth,5000); }
+}
+
+// ── Modes (dynamic from /modes) ───────────────────
+async function loadModes() {
+  try {
+    var resp = await fetch(API + '/modes');
+    var d = await resp.json();
+    allModes = d.modes;
+    renderModes();
+  } catch(e) { console.error('Failed to load modes',e); }
+}
+
+function renderModes() {
+  var grid = document.getElementById('modeGrid');
+  grid.innerHTML = allModes.map(function(m) {
+    return '<div class="mode-card ' + (adminConfig.mode===m.id?'active':'') + '" id="mode_' + m.id + '"' +
+           ' style="--mode-color:' + m.color + '" onclick="selectMode(\'' + m.id + '\')">' +
+           '<div class="icon">' + m.icon + '</div>' +
+           '<div class="name">' + m.name + '</div>' +
+           '<div class="desc">' + m.description + '</div>' +
+           '</div>';
+  }).join('');
+}
+
+function selectMode(id) {
+  adminConfig.mode = id;
+  var m = allModes.find(function(x){return x.id===id;});
+  document.getElementById('statMode').textContent = m ? m.name : id;
+  renderModes();
+  saveConfig();
+}
+
+async function reloadModes() {
+  try {
+    var resp = await fetch(API + '/modes/reload', {method:'POST', headers:authH()});
+    var d = await resp.json();
+    showToast('Reloaded ' + d.reloaded + ' modes: ' + d.modes.join(', '), 'success');
+    await loadModes();
+  } catch(e) { showToast('Reload failed','error'); }
+}
+
+// ── Config ────────────────────────────────────────
+async function loadConfig() {
+  try {
+    var resp = await fetch(API + '/admin/config', {headers:authH()});
+    var cfg = await resp.json();
+    adminConfig = cfg;
+    document.getElementById('cfgTopic').value = cfg.topic||'';
+    document.getElementById('cfgCourse').value = cfg.courseFilter||'';
+    document.getElementById('cfgUseLectures').checked = cfg.useLectures!==false;
+    var m = allModes.find(function(x){return x.id===cfg.mode;});
+    document.getElementById('statMode').textContent = m ? m.name : cfg.mode;
+    renderModes();
+  } catch(e) {}
+}
+
+async function saveConfig() {
+  adminConfig.topic = document.getElementById('cfgTopic').value.trim();
+  adminConfig.courseFilter = document.getElementById('cfgCourse').value.trim();
+  adminConfig.useLectures = document.getElementById('cfgUseLectures').checked;
+  try { 
+    await fetch(API + '/admin/config', {method:'PUT', headers:authH(), body:JSON.stringify(adminConfig)}); 
+    showToast('Config saved','success'); 
+  } catch(e) { 
+    showToast('Save failed','error'); 
+  }
+}
+
+// ── Files ─────────────────────────────────────────
+function handleDrop(e){e.preventDefault();e.currentTarget.classList.remove('dragging');uploadFiles(Array.from(e.dataTransfer.files));}
+function handleFiles(e){uploadFiles(Array.from(e.target.files));e.target.value='';}
+
+async function uploadFiles(files) {
+  var course = document.getElementById('cfgCourse').value.trim() || null;
+  var prog = document.getElementById('uploadProgress');
+  var bar = document.getElementById('uploadProgressBar');
+  var valid = files.filter(function(f){return /\.(pdf|pptx?|txt|md)$/i.test(f.name);});
+  if(!valid.length){showToast('No supported files','error');return;}
+  prog.classList.add('active');
+  for(var i=0; i<valid.length; i++){
+    bar.style.width = ((i/valid.length)*100) + '%';
+    var form = new FormData();
+    form.append('file', valid[i]);
+    if(course) form.append('course', course);
+    form.append('lecture_title', valid[i].name.replace(/\.[^.]+$/,''));
+    try{
+      var r = await fetch(API + '/lectures/upload', {method:'POST', body:form});
+      if(!r.ok){var err = await r.json(); showToast(valid[i].name + ': ' + err.detail, 'error'); continue;}
+      var d = await r.json(); showToast(d.filename + ': ' + d.num_chunks + ' chunks', 'success');
+    } catch(e) { showToast(valid[i].name + ': failed', 'error'); }
+    bar.style.width = (((i+1)/valid.length)*100) + '%';
+  }
+  setTimeout(function(){prog.classList.remove('active');bar.style.width='0%';},1000);
+  await loadFiles(); await checkHealth();
+}
+
+async function loadFiles() {
+  try{
+    var resp = await fetch(API + '/lectures');
+    var d = await resp.json();
+    var tb = document.getElementById('fileTableBody');
+    document.getElementById('fileCount').textContent = d.total + ' files';
+    document.getElementById('statDocs').textContent = d.total;
+    if(!d.total){tb.innerHTML='<tr><td colspan="6" class="empty-state">No slides uploaded</td></tr>';return;}
+    tb.innerHTML = d.documents.map(function(doc){
+      return '<tr>' +
+        '<td class="file-name">📄 ' + doc.filename + '</td>' +
+        '<td class="file-course">' + (doc.course || '—') + '</td>' +
+        '<td>' + doc.num_pages + '</td>' +
+        '<td><span class="file-badge">' + doc.num_chunks + '</span></td>' +
+        '<td>' + (doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : '—') + '</td>' +
+        '<td><button class="delete-btn" onclick="deleteFile(\'' + doc.doc_id + '\',\'' + doc.filename + '\')">Delete</button></td>' +
+        '</tr>';
+    }).join('');
+  } catch(e) { showToast('Failed to load files','error'); }
+}
+
+async function deleteFile(id, name){
+  if(!confirm('Delete "' + name + '"?')) return;
+  try {
+    await fetch(API + '/lectures/' + id, {method:'DELETE'});
+    showToast('Deleted ' + name, 'success');
+    await loadFiles(); await checkHealth();
+  } catch(e) { showToast('Delete failed','error'); }
+}
+
+// ── Toast ─────────────────────────────────────────
+function showToast(t, type){
+  var el = document.getElementById('toast');
+  el.textContent = t;
+  el.className = 'toast show ' + (type || '');
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){el.className = 'toast';}, 3000);
+}
+</script>
+</body>
+</html>

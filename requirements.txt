@@ -1,0 +1,9 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+llama-cpp-python>=0.2.50
+sentence-transformers>=2.5.0
+chromadb>=0.4.22
+PyMuPDF>=1.23.0
+python-pptx>=0.6.23

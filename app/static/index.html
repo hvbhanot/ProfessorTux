@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Professor Tux 🐧 — Cybersecurity Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg-primary:#0c0c0c;
+  --bg-secondary:#0a0a0a;
+  --bg-terminal:#000000;
+  --border:#1a1a1a;
+  --border-active:#33ff00;
+  --text-primary:#33ff00;
+  --text-secondary:#22cc00;
+  --text-muted:#116600;
+  --text-white:#e0e0e0;
+  --accent-green:#33ff00;
+  --accent-green-dim:rgba(51,255,0,0.1);
+  --accent-cyan:#00ffff;
+  --accent-yellow:#ffff00;
+  --accent-purple:#ff00ff;
+  --font-mono:'JetBrains Mono',monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font-mono);background:var(--bg-terminal);color:var(--text-primary);font-size:14px;line-height:1.6}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-track{background:var(--bg-secondary)}
+::-webkit-scrollbar-thumb{background:var(--text-muted);border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:var(--text-secondary)}
+
+/* Terminal container */
+.app{display:flex;flex-direction:column;height:100vh;background:var(--bg-terminal)}
+
+/* Header - Terminal title bar */
+.header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg-secondary);border-bottom:2px solid var(--border);flex-shrink:0}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-logo{width:32px;height:32px;object-fit:contain;filter:drop-shadow(0 0 8px var(--accent-green))}
+.header-info{display:flex;flex-direction:column}
+.header-title{font-size:14px;font-weight:700;color:var(--accent-green);text-transform:uppercase;letter-spacing:2px}
+.header-sub{font-size:11px;color:var(--text-muted);letter-spacing:1px}
+.header-right{display:flex;align-items:center;gap:12px}
+
+/* Terminal status indicators */
+.mode-badge{padding:4px 12px;border:1px solid var(--text-secondary);font-size:11px;font-weight:500;color:var(--accent-green);background:var(--accent-green-dim);font-family:var(--font-mono)}
+.status-pill{display:flex;align-items:center;gap:8px;padding:4px 12px;border:1px solid var(--border);font-size:11px;color:var(--text-secondary)}
+.status-dot{width:8px;height:8px;background:var(--accent-green);animation:blink 1s infinite}
+.status-dot.loading{background:var(--accent-yellow);animation:blink 0.5s infinite}
+.status-dot.offline{background:#ff0000}
+@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0.3}}
+
+/* Terminal screen */
+.terminal-screen{flex:1;overflow-y:auto;padding:16px;background:var(--bg-terminal);font-family:var(--font-mono)}
+
+/* Welcome screen - ASCII art style */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:20px;padding:40px;min-height:100%}
+.welcome-ascii{font-size:10px;line-height:1.2;color:var(--accent-green);white-space:pre;font-family:var(--font-mono);text-shadow:0 0 10px var(--accent-green-dim)}
+.welcome-text{font-size:12px;color:var(--text-secondary);max-width:600px;line-height:1.8}
+.welcome-hint{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:16px}
+.hint-chip{padding:6px 14px;border:1px solid var(--text-muted);font-size:11px;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;font-family:var(--font-mono)}
+.hint-chip:hover{border-color:var(--accent-green);color:var(--accent-green);background:var(--accent-green-dim)}
+
+/* Terminal output lines */
+.terminal-line{display:flex;flex-direction:column;margin-bottom:8px;animation:fadeIn 0.15s ease-out}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* Prompt styles */
+.prompt-line{display:flex;align-items:flex-start;gap:8px;margin-bottom:4px}
+.prompt-user{color:var(--accent-green);font-weight:600;white-space:nowrap}
+.prompt-host{color:var(--text-secondary)}
+.prompt-path{color:var(--accent-yellow)}
+.prompt-symbol{color:var(--accent-green);margin-left:4px}
+.prompt-input{color:var(--text-white);flex:1;word-break:break-word}
+
+/* AI response container */
+.ai-response{margin:8px 0 16px 0;padding-left:0}
+.ai-header{display:flex;align-items:center;gap:8px;color:var(--accent-cyan);font-weight:600;margin-bottom:8px}
+.ai-icon{width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 0 5px var(--accent-cyan))}
+
+/* Formatted content */
+.content-box{border-left:2px solid var(--accent-green);padding-left:16px;margin:8px 0;color:var(--text-white);line-height:1.8}
+.content-box p{margin-bottom:12px}
+.content-box p:last-child{margin-bottom:0}
+.content-box strong{color:var(--accent-green);font-weight:600}
+.content-box em{color:var(--accent-yellow);font-style:italic}
+.content-box code{background:var(--bg-secondary);color:var(--accent-cyan);padding:2px 6px;font-family:var(--font-mono);font-size:13px;border:1px solid var(--border)}
+.content-box pre{background:var(--bg-secondary);border:1px solid var(--border);padding:12px;margin:12px 0;overflow-x:auto}
+.content-box pre code{background:transparent;border:none;padding:0;color:var(--text-white)}
+.content-box ul,.content-box ol{margin:12px 0;padding-left:24px}
+.content-box li{margin:4px 0;color:var(--text-white)}
+.content-box li::marker{color:var(--accent-green)}
+.content-box blockquote{border-left:2px solid var(--text-muted);padding-left:12px;margin:12px 0;color:var(--text-secondary);font-style:italic}
+.content-box h1,.content-box h2,.content-box h3{color:var(--accent-green);margin:16px 0 8px 0;font-weight:600}
+.content-box h1{font-size:16px}
+.content-box h2{font-size:14px}
+.content-box h3{font-size:13px}
+.content-box hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+.content-box a{color:var(--accent-cyan);text-decoration:none}
+.content-box a:hover{text-decoration:underline}
+.content-box table{border-collapse:collapse;width:100%;margin:12px 0}
+.content-box th,.content-box td{border:1px solid var(--border);padding:8px 12px;text-align:left}
+.content-box th{background:var(--bg-secondary);color:var(--accent-green)}
+
+/* Sources */
+.sources-line{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;padding-left:16px}
+.source-tag{padding:2px 10px;border:1px solid var(--accent-purple);color:var(--accent-purple);font-size:10px;font-family:var(--font-mono)}
+
+/* Hint */
+.hint-line{display:flex;align-items:center;gap:8px;margin-top:8px;padding-left:16px;color:var(--accent-yellow);font-size:12px}
+.hint-line::before{content:"💡";font-size:11px}
+
+/* Thinking animation */
+.thinking-line{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:12px;margin:8px 0;padding-left:16px}
+.thinking-dots{display:flex;gap:4px}
+.thinking-dot{width:6px;height:6px;background:var(--accent-green);animation:thinking 1.4s infinite}
+.thinking-dot:nth-child(2){animation-delay:0.2s}
+.thinking-dot:nth-child(3){animation-delay:0.4s}
+@keyframes thinking{0%,60%,100%{opacity:0.3}30%{opacity:1}}
+
+/* Input area - Terminal command line */
+.input-area{padding:12px 16px;background:var(--bg-secondary);border-top:2px solid var(--border);flex-shrink:0}
+.input-wrapper{display:flex;align-items:flex-start;gap:8px}
+.input-prompt{color:var(--accent-green);font-weight:600;white-space:nowrap;padding-top:10px}
+.input-box{flex:1;display:flex;align-items:flex-end;gap:8px;background:var(--bg-terminal);border:1px solid var(--border);padding:8px 12px;transition:border-color 0.2s}
+.input-box:focus-within{border-color:var(--accent-green)}
+.input-box.disabled{opacity:0.5;pointer-events:none}
+.chat-input{flex:1;background:transparent;border:none;color:var(--text-white);font-family:var(--font-mono);font-size:14px;line-height:1.5;resize:none;min-height:22px;max-height:120px;outline:none}
+.chat-input::placeholder{color:var(--text-muted)}
+.send-btn{width:32px;height:32px;border:none;background:transparent;color:var(--accent-green);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+.send-btn:hover{color:var(--text-white);text-shadow:0 0 10px var(--accent-green)}
+.send-btn:disabled{color:var(--text-muted);cursor:not-allowed}
+
+/* Cursor blink */
+.cursor{display:inline-block;width:8px;height:16px;background:var(--accent-green);animation:cursor-blink 1s infinite;vertical-align:middle;margin-left:2px}
+@keyframes cursor-blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+
+/* Toast */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;background:var(--bg-secondary);border:1px solid #ff0000;color:#ff0000;font-family:var(--font-mono);font-size:12px;opacity:0;transition:opacity 0.3s;z-index:999}
+.toast.show{opacity:1}
+
+/* Responsive */
+@media(max-width:640px){
+  .header{padding:8px 12px}
+  .terminal-screen{padding:12px}
+  .welcome-ascii{font-size:8px}
+  .content-box{padding-left:12px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-left">
+      <img class="header-logo" src="/static/logo.png" alt="Tux">
+      <div class="header-info">
+        <div class="header-title">Professor Tux</div>
+        <div class="header-sub">CYBERSECURITY LAB v3.0</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="mode-badge" id="modeBadge">INIT...</div>
+      <div class="status-pill">
+        <div class="status-dot loading" id="statusDot"></div>
+        <span id="statusText">CONNECTING</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="terminal-screen" id="terminal">
+    <div class="welcome" id="welcomeScreen">
+      <div class="welcome-ascii">
+   _____             _             _             _           
+  |  __ \           | |           | |           | |          
+  | |__) | __ _  ___| |_ ___  _ __| |_ ___ _   _| |__   ___  
+  |  ___/ / _` |/ __| __/ _ \| '__| __/ _ \ | | | '_ \ / _ \ 
+  | |    | (_| | (__| || (_) | |  | ||  __/ |_| | |_) | (_) |
+  |_|     \__,_|\___|\__\___/|_|   \__\___|\__,_|_.__/ \___/ 
+                                                              
+      </div>
+      <div class="welcome-text">
+        Welcome to the Cybersecurity Lab. I'm Professor Tux, your AI instructor.<br>
+        Ask me anything about network security, cryptography, forensics, and more.
+      </div>
+      <div class="welcome-hint">
+        <div class="hint-chip" onclick="quickAsk('What is SQL injection?')">sql_injection?</div>
+        <div class="hint-chip" onclick="quickAsk('Explain buffer overflows')">buffer_overflows</div>
+        <div class="hint-chip" onclick="quickAsk('How does XSS work?')">xss_vectors</div>
+        <div class="hint-chip" onclick="quickAsk('Teach me about MITM attacks')">mitm_attacks</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-area">
+    <div class="input-wrapper">
+      <span class="input-prompt">student@cybersec:~$</span>
+      <div class="input-box disabled" id="inputBox">
+        <textarea class="chat-input" id="chatInput" rows="1" placeholder="Initializing system..." onkeydown="handleKey(event)" oninput="autoGrow(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>⏎</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.origin;
+let state = { sessionId:null, mode:'recall', isGenerating:false };
+let modesMap = {};
+
+async function init() {
+  try { 
+    const resp = await fetch(API + '/modes');
+    const d = await resp.json();
+    d.modes.forEach(function(m) { modesMap[m.id] = m; });
+  } catch(e) {}
+  await waitForServer();
+  await createSession();
+}
+
+async function waitForServer() {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  while(true) {
+    try {
+      const resp = await fetch(API + '/health');
+      const d = await resp.json();
+      if(d.model_loaded) {
+        dot.className = 'status-dot';
+        txt.textContent = 'ONLINE';
+        return;
+      }
+      dot.className = 'status-dot loading';
+      txt.textContent = 'LOADING';
+    } catch(e) {
+      dot.className = 'status-dot offline';
+      txt.textContent = 'OFFLINE';
+    }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+}
+
+async function createSession() {
+  try {
+    let cfg = {mode:'recall',topic:'',courseFilter:'',useLectures:true};
+    try{
+      const r = await fetch(API + '/admin/config/public');
+      if(r.ok) cfg = await r.json();
+    } catch(e) {}
+    state.mode = cfg.mode || 'recall';
+    updateBadge();
+    
+    const resp = await fetch(API + '/sessions', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mode: cfg.mode || 'recall',
+        topic: cfg.topic || null,
+        course_filter: cfg.courseFilter || null,
+        use_lectures: cfg.useLectures !== false
+      })
+    });
+    const d = await resp.json();
+    state.sessionId = d.session_id;
+    
+    document.getElementById('inputBox').classList.remove('disabled');
+    document.getElementById('chatInput').placeholder = 'Enter command...';
+    document.getElementById('sendBtn').disabled = false;
+    
+    // Show welcome message in terminal style
+    const term = document.getElementById('terminal');
+    const welcome = document.getElementById('welcomeScreen');
+    if(welcome) {
+      addSystemLine('SESSION_INITIALIZED');
+      addSystemLine('MODE: ' + (modesMap[state.mode]?.name || state.mode).toUpperCase());
+      addSystemLine('');
+    }
+  } catch(e) {
+    showToast('Connection failed — retrying...');
+    setTimeout(createSession, 3000);
+  }
+}
+
+function updateBadge() {
+  const badge = document.getElementById('modeBadge');
+  const m = modesMap[state.mode];
+  badge.textContent = m ? `[${m.id.toUpperCase()}]` : `[${state.mode.toUpperCase()}]`;
+}
+
+function addSystemLine(text) {
+  const term = document.getElementById('terminal');
+  const line = document.createElement('div');
+  line.className = 'terminal-line';
+  line.innerHTML = `<span style="color:var(--text-muted)">[SYSTEM] ${escapeHtml(text)}</span>`;
+  term.appendChild(line);
+  scrollB();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if(!msg || !state.sessionId || state.isGenerating) return;
+  
+  state.isGenerating = true;
+  input.value = '';
+  autoGrow(input);
+  document.getElementById('sendBtn').disabled = true;
+  
+  const welcome = document.getElementById('welcomeScreen');
+  if(welcome) welcome.remove();
+  
+  // Add user command line
+  addUserCommand(msg);
+  
+  // Add thinking indicator
+  const thinkingId = addThinking();
+  
+  try {
+    const resp = await fetch(API + '/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({session_id: state.sessionId, message: msg})
+    });
+    const d = await resp.json();
+    
+    removeThinking(thinkingId);
+    addAIResponse(d.response, d.sources_used, d.hint);
+    
+    if(d.mode !== state.mode) {
+      state.mode = d.mode;
+      updateBadge();
+    }
+  } catch(e) {
+    removeThinking(thinkingId);
+    addSystemLine('ERROR: ' + e.message);
+  } finally {
+    state.isGenerating = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('chatInput').focus();
+  }
+}
+
+function addUserCommand(cmd) {
+  const term = document.getElementById('terminal');
+  const line = document.createElement('div');
+  line.className = 'terminal-line';
+  line.innerHTML = `
+    <div class="prompt-line">
+      <span class="prompt-user">student</span><span class="prompt-host">@</span><span class="prompt-host">cybersec</span><span class="prompt-path">:~$</span>
+      <span class="prompt-input">${escapeHtml(cmd)}</span>
+    </div>
+  `;
+  term.appendChild(line);
+  scrollB();
+}
+
+function addThinking() {
+  const term = document.getElementById('terminal');
+  const id = 'thinking-' + Date.now();
+  const line = document.createElement('div');
+  line.id = id;
+  line.className = 'terminal-line';
+  line.innerHTML = `
+    <div class="thinking-line">
+      <span>thinking</span>
+      <div class="thinking-dots">
+        <div class="thinking-dot"></div>
+        <div class="thinking-dot"></div>
+        <div class="thinking-dot"></div>
+      </div>
+    </div>
+  `;
+  term.appendChild(line);
+  scrollB();
+  return id;
+}
+
+function removeThinking(id) {
+  const el = document.getElementById(id);
+  if(el) el.remove();
+}
+
+function addAIResponse(text, sources, hint) {
+  const term = document.getElementById('terminal');
+  const line = document.createElement('div');
+  line.className = 'terminal-line ai-response';
+  
+  const formattedText = formatMarkdown(text);
+  let sourcesHtml = '';
+  let hintHtml = '';
+  
+  if(sources && sources.length) {
+    sourcesHtml = `
+      <div class="sources-line">
+        ${sources.map(s => `<span class="source-tag">📎 ${escapeHtml(s)}</span>`).join('')}
+      </div>
+    `;
+  }
+  
+  if(hint) {
+    hintHtml = `<div class="hint-line">${escapeHtml(hint)}</div>`;
+  }
+  
+  line.innerHTML = `
+    <div class="ai-header">
+      <img class="ai-icon" src="/static/logo.png" alt="Tux">
+      <span>professor-tux@ai:~$</span>
+    </div>
+    <div class="content-box">${formattedText}</div>
+    ${sourcesHtml}
+    ${hintHtml}
+  `;
+  
+  term.appendChild(line);
+  scrollB();
+}
+
+function formatMarkdown(text) {
+  // Escape HTML first
+  let html = escapeHtml(text);
+  
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  
+  // Bold and italic
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+  
+  // Code blocks
+  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  
+  // Lists
+  html = html.replace(/^(\s*)-\s+(.+)$/gm, (match, indent, content) => {
+    const level = indent.length / 2;
+    return `<li style="margin-left:${level * 20}px">${content}</li>`;
+  });
+  html = html.replace(/^(\s*)\d+\.\s+(.+)$/gm, (match, indent, content) => {
+    const level = indent.length / 2;
+    return `<li style="margin-left:${level * 20}px">${content}</li>`;
+  });
+  
+  // Wrap consecutive li elements in ul
+  html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
+  
+  // Blockquotes
+  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  
+  // Horizontal rule
+  html = html.replace(/^---+$/gm, '<hr>');
+  
+  // Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+  
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  
+  return html;
+}
+
+function quickAsk(t) {
+  document.getElementById('chatInput').value = t;
+  sendMessage();
+}
+
+function handleKey(e) {
+  if(e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function escapeHtml(t) {
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+function scrollB() {
+  const t = document.getElementById('terminal');
+  requestAnimationFrame(() => { t.scrollTop = t.scrollHeight; });
+}
+
+function showToast(t) {
+  const el = document.getElementById('toast');
+  el.textContent = t;
+  el.className = 'toast show';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.className = 'toast'; }, 3000);
+}
+
+init();
+</script>
+</body>
+</html>
