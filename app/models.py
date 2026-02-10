@@ -1,13 +1,9 @@
-"""
-Pydantic schemas for Professor Tux API.
-Mode is a dynamic string (validated against loaded modes at runtime).
-"""
-
-from pydantic import BaseModel, Field
 from typing import Optional
 
+from pydantic import BaseModel, Field
 
 # ── Requests ─────────────────────────────────────────────────────────
+
 
 class SessionCreateRequest(BaseModel):
     mode: str = Field(
@@ -40,12 +36,14 @@ class ChatRequest(BaseModel):
 
 # ── Responses ────────────────────────────────────────────────────────
 
+
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     knowledge_base_loaded: bool = False
     total_lecture_chunks: int = 0
     available_modes: list[str] = []
+    active_model: str = ""
 
 
 class SessionCreateResponse(BaseModel):
@@ -79,6 +77,7 @@ class ChatResponse(BaseModel):
 
 # ── Mode schemas ─────────────────────────────────────────────────────
 
+
 class ModeInfo(BaseModel):
     id: str
     name: str
@@ -94,6 +93,7 @@ class ModeListResponse(BaseModel):
 
 
 # ── Lecture / RAG schemas ────────────────────────────────────────────
+
 
 class LectureUploadResponse(BaseModel):
     doc_id: str

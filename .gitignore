@@ -1,0 +1,13 @@
+# Models
+models/*.gguf
+
+# Data
+data/chromadb/
+data/uploads/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

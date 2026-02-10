@@ -8,6 +8,7 @@ Professor Tux — Cybersecurity Teaching API (v3)
 """
 
 import os
+import json
 import shutil
 import secrets
 import logging
@@ -15,7 +16,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from contextlib import asynccontextmanager
 from typing import Optional
 from pydantic import BaseModel
@@ -70,9 +71,9 @@ async def lifespan(app: FastAPI):
     if not mode_loader.is_valid_mode(admin_config["mode"]):
         if mode_loader.available_modes:
             admin_config["mode"] = mode_loader.available_modes[0]
-    # 2. Load model
+    # 2. Create professor (model loaded later via admin panel)
     professor = ProfessorTux(mode_loader)
-    professor.load_model()
+    logger.info("🐧 Professor Tux ready — no model loaded yet. Select one from the admin panel.")
     # 3. Init knowledge base
     knowledge_base.initialize()
     yield
@@ -196,11 +197,12 @@ async def reload_modes(token: str = Depends(verify_admin)):
 async def health_check():
     kb_stats = knowledge_base.get_stats() if knowledge_base.is_loaded else {}
     return HealthResponse(
-        status="online" if professor and professor.is_loaded else "loading",
+        status="online" if professor and professor.is_loaded else ("no_model" if professor else "loading"),
         model_loaded=professor.is_loaded if professor else False,
         knowledge_base_loaded=knowledge_base.is_loaded,
         total_lecture_chunks=kb_stats.get("total_chunks", 0),
         available_modes=mode_loader.available_modes,
+        active_model=professor.model_name if professor and professor.is_loaded else "",
     )
 
 
@@ -300,6 +302,99 @@ async def chat(req: ChatRequest):
         hint=mode_loader.get_hint(active_mode),
         sources_used=sources_used,
     )
+
+
+@app.post("/chat/stream", tags=["Chat"])
+async def chat_stream(req: ChatRequest):
+    """SSE streaming endpoint — tokens sent as they are generated."""
+    if not professor or not professor.is_loaded:
+        raise HTTPException(503, "Model is still loading")
+
+    session = sessions.get(req.session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    active_mode = req.mode_override or session["mode"]
+    if req.mode_override:
+        if not mode_loader.is_valid_mode(req.mode_override):
+            raise HTTPException(400, f"Unknown mode: {req.mode_override}")
+        sessions.update_mode(req.session_id, req.mode_override)
+
+    # RAG retrieval
+    lecture_context = ""
+    sources_used = []
+
+    if session.get("use_lectures", True) and knowledge_base.is_loaded:
+        search_query = req.message
+        if session.get("topic"):
+            search_query = f"{session['topic']}: {search_query}"
+
+        contexts = knowledge_base.search(
+            query=search_query, top_k=5,
+            course_filter=session.get("course_filter"),
+        )
+        if contexts:
+            lecture_context = knowledge_base.format_context_for_prompt(contexts)
+            sources_used = list(set(
+                f"{c.source_filename} (slide {c.page_or_slide})"
+                for c in contexts if c.relevance_score >= 0.3
+            ))
+
+    def _event_stream():
+        full_response = []
+        for token in professor.generate_stream(
+            student_message=req.message,
+            mode_id=active_mode,
+            topic=session["topic"],
+            history=session["history"],
+            lecture_context=lecture_context,
+        ):
+            full_response.append(token)
+            yield f"data: {json.dumps({'token': token})}\n\n"
+
+        # Send final event with metadata
+        response_text = "".join(full_response).strip()
+        sessions.add_message(req.session_id, role="student", content=req.message)
+        sessions.add_message(req.session_id, role="professor_tux", content=response_text)
+        yield f"data: {json.dumps({'done': True, 'mode': active_mode, 'hint': mode_loader.get_hint(active_mode), 'sources_used': sources_used})}\n\n"
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
+
+
+# ━━━━━━━━━━━━━━━━━━━━  MODELS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MODELS_DIR = Path("./models")
+
+
+@app.get("/models", tags=["Models"])
+async def list_models():
+    """List all available GGUF model files."""
+    models = []
+    if MODELS_DIR.exists():
+        for f in sorted(MODELS_DIR.iterdir()):
+            if f.suffix == ".gguf" and f.is_file():
+                models.append({
+                    "filename": f.name,
+                    "size_mb": round(f.stat().st_size / (1024 * 1024), 1),
+                    "active": professor is not None and professor.model_name == f.name,
+                })
+    return {"models": models}
+
+
+@app.post("/admin/models/switch", tags=["Admin"])
+async def switch_model(request: Request, token: str = Depends(verify_admin)):
+    """Load a different GGUF model file."""
+    body = await request.json()
+    filename = body.get("filename", "")
+    model_path = MODELS_DIR / filename
+    if not model_path.exists() or model_path.suffix != ".gguf":
+        raise HTTPException(400, f"Model not found: {filename}")
+    try:
+        professor.load_model_by_path(str(model_path))
+    except Exception as e:
+        logger.error("Model switch failed: %s", e, exc_info=True)
+        raise HTTPException(500, f"Failed to load model: {e}")
+    return {"active_model": filename, "message": f"Switched to {filename}"}
 
 
 # ━━━━━━━━━━━━━━━━━━━━  LECTURES  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -205,6 +205,13 @@ body{font-family:var(--font-mono);background:var(--bg-primary);color:var(--text-
       <div class="card-header"><div class="card-title">⚙️ Session Config</div></div>
       <div class="card-body">
         <div class="config-form">
+          <div class="form-group">
+            <div class="form-label">Active Model</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="form-input" id="cfgModel" style="flex:1"></select>
+              <button class="save-btn" onclick="switchModel()" style="margin:0;white-space:nowrap">Switch</button>
+            </div>
+          </div>
           <div class="form-group"><div class="form-label">Default Topic</div><input class="form-input" id="cfgTopic" type="text" placeholder="e.g., SQL Injection, XSS"></div>
           <div class="form-group"><div class="form-label">Course Filter</div><input class="form-input" id="cfgCourse" type="text" placeholder="e.g., CSCI-4390 Network Security"></div>
           <label class="form-check"><input type="checkbox" id="cfgUseLectures" checked><span>Enable lecture slide context (RAG)</span></label>
@@ -256,7 +263,47 @@ function authH() { return { 'Authorization':'Bearer ' + sessionStorage.getItem('
 if (sessionStorage.getItem('admin_token')) { fetch(API + '/admin/verify',{headers:authH()}).then(function(r){if(r.ok)show();}); }
 
 // ── Dashboard ─────────────────────────────────────
-async function loadDashboard() { await checkHealth(); await loadModes(); await loadConfig(); await loadFiles(); }
+async function loadDashboard() { await checkHealth(); await loadModels(); await loadModes(); await loadConfig(); await loadFiles(); }
+
+// ── Models ────────────────────────────────────────
+async function loadModels() {
+  try {
+    var resp = await fetch(API + '/models');
+    var d = await resp.json();
+    var sel = document.getElementById('cfgModel');
+    sel.innerHTML = d.models.map(function(m) {
+      return '<option value="' + m.filename + '"' + (m.active ? ' selected' : '') + '>' +
+             m.filename + ' (' + m.size_mb + ' MB)' + (m.active ? ' ✓' : '') + '</option>';
+    }).join('');
+    if(!d.models.length) sel.innerHTML = '<option disabled>No .gguf files found</option>';
+  } catch(e) { console.error('Failed to load models', e); }
+}
+
+async function switchModel() {
+  var sel = document.getElementById('cfgModel');
+  var filename = sel.value;
+  if(!filename) return;
+  showToast('Loading model: ' + filename + '…');
+  var dot = document.getElementById('statusDot');
+  var txt = document.getElementById('statusText');
+  dot.className = 'status-dot loading';
+  txt.textContent = 'Switching…';
+  try {
+    var resp = await fetch(API + '/admin/models/switch', {
+      method: 'POST',
+      headers: authH(),
+      body: JSON.stringify({filename: filename})
+    });
+    if(!resp.ok) { var err = await resp.json(); throw new Error(err.detail || 'Switch failed'); }
+    var d = await resp.json();
+    showToast('Switched to ' + d.active_model, 'success');
+    await loadModels();
+    await checkHealth();
+  } catch(e) {
+    showToast('Model switch failed: ' + e.message, 'error');
+    await checkHealth();
+  }
+}
 
 async function checkHealth() {
   var dot = document.getElementById('statusDot');

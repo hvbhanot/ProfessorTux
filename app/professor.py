@@ -60,23 +60,39 @@ class ProfessorTux:
     def __init__(self, mode_loader: ModeLoader):
         self._llm: Optional[Llama] = None
         self._mode_loader = mode_loader
+        self._model_path: str = MODEL_PATH
 
     @property
     def is_loaded(self) -> bool:
         return self._llm is not None
 
+    @property
+    def model_name(self) -> str:
+        return os.path.basename(self._model_path)
+
     def load_model(self):
         """Load the GGUF model from a local file path."""
-        if not os.path.isfile(MODEL_PATH):
+        self._load_from_path(self._model_path)
+
+    def load_model_by_path(self, path: str):
+        """Swap to a different GGUF model at runtime."""
+        if self._llm is not None:
+            del self._llm
+            self._llm = None
+        self._model_path = path
+        self._load_from_path(path)
+
+    def _load_from_path(self, path: str):
+        if not os.path.isfile(path):
             raise FileNotFoundError(
-                f"Model not found at '{MODEL_PATH}'. "
+                f"Model not found at '{path}'. "
                 f"Set MODEL_PATH env var to your .gguf file."
             )
 
         logger.info("⏳ Loading model from %s (n_ctx=%d, n_gpu_layers=%d) …",
-                     MODEL_PATH, N_CTX, N_GPU_LAYERS)
+                     path, N_CTX, N_GPU_LAYERS)
         self._llm = Llama(
-            model_path=MODEL_PATH,
+            model_path=path,
             n_ctx=N_CTX,
             n_gpu_layers=N_GPU_LAYERS,
             verbose=False,
@@ -147,9 +163,77 @@ class ProfessorTux:
         )
 
         content = result["choices"][0]["message"]["content"].strip()
-        
+
         # Strip thinking content from reasoning models (e.g., <think>...</think>)
         import re
         content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
-        
+
         return content
+
+    def generate_stream(
+        self,
+        student_message: str,
+        mode_id: str,
+        topic: Optional[str],
+        history: list[dict],
+        lecture_context: str = "",
+    ):
+        """Yield tokens as they are generated (for SSE streaming)."""
+        if not self._llm:
+            raise RuntimeError("Model not loaded")
+
+        messages = self._build_messages(
+            student_message, mode_id, topic, history, lecture_context
+        )
+
+        import re
+        stream = self._llm.create_chat_completion(
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE,
+            top_p=0.9,
+            repeat_penalty=1.1,
+            stop=["Student:", "student:", "\n\nUser:"],
+            stream=True,
+        )
+
+        buffer = ""
+        in_think = False
+        for chunk in stream:
+            delta = chunk["choices"][0].get("delta", {})
+            token = delta.get("content", "")
+            if not token:
+                continue
+
+            buffer += token
+
+            # Suppress <think>...</think> blocks from streaming output
+            if not in_think:
+                if "<think>" in buffer:
+                    # Yield everything before <think>
+                    before = buffer[:buffer.index("<think>")]
+                    if before:
+                        yield before
+                    buffer = buffer[buffer.index("<think>"):]
+                    in_think = True
+                else:
+                    # Only yield if we're sure we're not mid-tag
+                    safe = buffer
+                    # Hold back a few chars in case "<think>" is being built up
+                    if len(buffer) > 6:
+                        safe = buffer[:-6]
+                        buffer = buffer[-6:]
+                    else:
+                        safe = ""
+                    if safe:
+                        yield safe
+            else:
+                # Inside <think> block, don't yield
+                if "</think>" in buffer:
+                    after = buffer[buffer.index("</think>") + 8:]
+                    buffer = after
+                    in_think = False
+
+        # Flush remaining buffer
+        if not in_think and buffer:
+            yield buffer
