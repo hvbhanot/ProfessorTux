@@ -9,10 +9,15 @@ Professor Tux — Cybersecurity Teaching API (v3)
 
 import os
 import json
+import re
+import time
+import random
 import shutil
 import secrets
 import logging
+import threading
 from pathlib import Path
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -33,9 +38,20 @@ from app.professor import ProfessorTux
 from app.sessions import SessionManager
 from app.rag import LectureKnowledgeBase, UPLOAD_DIR
 from app.mode_loader import ModeLoader
+from app.chat_logger import ChatLogger, ChatLogEntry
+from app.llm_backends import BackendError, OllamaBackend
+
+LOG_FILE_DIR = Path(os.getenv("CHAT_LOG_DIR", "./data/logs"))
+RUNTIME_SETTINGS_PATH = Path("./data/admin_runtime.json")
 
 logger = logging.getLogger("professor_tux")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(name)s  %(message)s")
+
+# Also log to file
+os.makedirs(LOG_FILE_DIR, exist_ok=True)
+_file_handler = logging.FileHandler(LOG_FILE_DIR / "professor_tux.log", encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s"))
+logging.getLogger().addHandler(_file_handler)
 
 # ── Admin credentials ────────────────────────────────────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -46,7 +62,26 @@ mode_loader = ModeLoader()
 professor: ProfessorTux | None = None
 sessions = SessionManager()
 knowledge_base = LectureKnowledgeBase()
+chat_logger = ChatLogger()
 admin_tokens: set[str] = set()
+model_operation_lock = threading.Lock()
+model_operation: dict = {
+    "state": "idle",
+    "provider": "",
+    "model": "",
+    "status": "",
+    "error": "",
+    "progress": None,
+    "started_at": "",
+    "updated_at": "",
+}
+runtime_settings_lock = threading.Lock()
+runtime_settings: dict = {
+    "ollama_base_url": "",
+    "max_tokens": None,
+}
+
+WRONG_MODE_ERROR_RATE = 0.10
 
 # Admin-controlled defaults pushed to the student page
 admin_config: dict = {
@@ -54,15 +89,111 @@ admin_config: dict = {
     "topic": "",
     "courseFilter": "",
     "useLectures": True,
+    "maxTokens": int(os.getenv("MAX_TOKENS", "1024")),
 }
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_runtime_settings():
+    if not RUNTIME_SETTINGS_PATH.exists():
+        return
+    try:
+        data = json.loads(RUNTIME_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load runtime settings: %s", exc)
+        return
+
+    if not isinstance(data, dict):
+        return
+
+    with runtime_settings_lock:
+        runtime_settings["ollama_base_url"] = str(data.get("ollama_base_url", "") or "").strip()
+        saved_max_tokens = data.get("max_tokens")
+        try:
+            runtime_settings["max_tokens"] = int(saved_max_tokens) if saved_max_tokens is not None else None
+        except (TypeError, ValueError):
+            runtime_settings["max_tokens"] = None
+
+
+def _save_runtime_settings():
+    with runtime_settings_lock:
+        payload = {
+            "ollama_base_url": runtime_settings.get("ollama_base_url", "").strip(),
+            "max_tokens": runtime_settings.get("max_tokens"),
+        }
+
+    RUNTIME_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RUNTIME_SETTINGS_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _effective_max_tokens() -> int:
+    with runtime_settings_lock:
+        saved_max_tokens = runtime_settings.get("max_tokens")
+    if isinstance(saved_max_tokens, int) and saved_max_tokens > 0:
+        return saved_max_tokens
+    return int(os.getenv("MAX_TOKENS", "1024"))
+
+
+def _effective_local_base_url() -> str:
+    with runtime_settings_lock:
+        ui_url = runtime_settings.get("ollama_base_url", "").strip()
+    env_url = os.getenv("OLLAMA_BASE_URL", "").strip()
+    if ui_url:
+        return ui_url
+    if env_url:
+        return env_url
+    if Path("/.dockerenv").exists():
+        return "http://host.docker.internal:11434"
+    return "http://127.0.0.1:11434"
+
+
+def _local_base_url_source() -> str:
+    with runtime_settings_lock:
+        ui_url = runtime_settings.get("ollama_base_url", "").strip()
+    if ui_url:
+        return "ui"
+    if os.getenv("OLLAMA_BASE_URL", "").strip():
+        return "env"
+    if Path("/.dockerenv").exists():
+        return "docker-default"
+    return "default"
+
+
+def _get_model_operation() -> dict:
+    with model_operation_lock:
+        return dict(model_operation)
+
+
+def _update_model_operation(**updates):
+    with model_operation_lock:
+        model_operation.update(updates)
+        model_operation["updated_at"] = _now_iso()
+
+
+def _reset_model_operation():
+    with model_operation_lock:
+        model_operation.update({
+            "state": "idle",
+            "provider": "",
+            "model": "",
+            "status": "",
+            "error": "",
+            "progress": None,
+            "started_at": "",
+            "updated_at": _now_iso(),
+        })
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global professor
+    _load_runtime_settings()
     # 1. Discover teaching modes
     n = mode_loader.discover()
     logger.info("📋 %d teaching mode(s) available: %s",
@@ -71,11 +202,22 @@ async def lifespan(app: FastAPI):
     if not mode_loader.is_valid_mode(admin_config["mode"]):
         if mode_loader.available_modes:
             admin_config["mode"] = mode_loader.available_modes[0]
+    admin_config["maxTokens"] = _effective_max_tokens()
     # 2. Create professor (model loaded later via admin panel)
     professor = ProfessorTux(mode_loader)
-    logger.info("🐧 Professor Tux ready — no model loaded yet. Select one from the admin panel.")
+    professor.configure_backend(base_url=_effective_local_base_url())
+    professor.configure_generation(max_tokens=_effective_max_tokens())
+    if professor.active_model:
+        logger.info(
+            "🐧 Professor Tux ready — default Ollama model target is %s.",
+            professor.active_model,
+        )
+    else:
+        logger.info("🐧 Professor Tux ready — no model target configured. Select one from the admin panel.")
     # 3. Init knowledge base
     knowledge_base.initialize()
+    # 4. Init chat logger
+    chat_logger.initialize()
     yield
     del professor
     professor = None
@@ -87,6 +229,9 @@ app = FastAPI(
     description="Cybersecurity teaching assistant with pluggable teaching modes and RAG.",
     version="3.0.0",
     lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(
@@ -124,6 +269,11 @@ async def admin_page():
     return FileResponse(STATIC_DIR / "admin.html")
 
 
+@app.get("/docs", include_in_schema=False)
+async def docs_page():
+    return FileResponse(STATIC_DIR / "docs.html")
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -157,12 +307,24 @@ async def update_config(request: Request, token: str = Depends(verify_admin)):
     new_mode = body.get("mode", admin_config["mode"])
     if not mode_loader.is_valid_mode(new_mode):
         raise HTTPException(400, f"Unknown mode: {new_mode}")
+    try:
+        max_tokens = int(body.get("maxTokens", admin_config["maxTokens"]))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "maxTokens must be an integer")
+    if max_tokens < 1 or max_tokens > 32768:
+        raise HTTPException(400, "maxTokens must be between 1 and 32768")
     admin_config.update({
         "mode": new_mode,
         "topic": body.get("topic", admin_config["topic"]),
         "courseFilter": body.get("courseFilter", admin_config["courseFilter"]),
         "useLectures": body.get("useLectures", admin_config["useLectures"]),
+        "maxTokens": max_tokens,
     })
+    with runtime_settings_lock:
+        runtime_settings["max_tokens"] = max_tokens
+    _save_runtime_settings()
+    if professor:
+        professor.configure_generation(max_tokens=max_tokens)
     return admin_config
 
 
@@ -196,13 +358,20 @@ async def reload_modes(token: str = Depends(verify_admin)):
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     kb_stats = knowledge_base.get_stats() if knowledge_base.is_loaded else {}
+    model_loaded = professor.is_loaded if professor else False
+    operation = _get_model_operation()
+    status = "online" if model_loaded else ("no_model" if professor else "loading")
+    if operation.get("state") == "downloading":
+        status = "downloading_model"
     return HealthResponse(
-        status="online" if professor and professor.is_loaded else ("no_model" if professor else "loading"),
-        model_loaded=professor.is_loaded if professor else False,
+        status=status,
+        model_loaded=model_loaded,
         knowledge_base_loaded=knowledge_base.is_loaded,
         total_lecture_chunks=kb_stats.get("total_chunks", 0),
         available_modes=mode_loader.available_modes,
-        active_model=professor.model_name if professor and professor.is_loaded else "",
+        active_model=professor.active_model if professor else "",
+        active_provider=professor.active_provider if professor else "",
+        status_detail=operation.get("status", ""),
     )
 
 
@@ -248,10 +417,314 @@ async def switch_mode(session_id: str, mode: str):
 
 # ━━━━━━━━━━━━━━━━━━━━  CHAT  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _normalize_model_name(model: str) -> str:
+    normalized = model.strip()
+    lowered = normalized.lower()
+    for prefix in ("ollama:", "cloud:"):
+        if lowered.startswith(prefix):
+            return normalized[len(prefix):].strip()
+    return normalized
+
+
+def _empty_response_fallback() -> str:
+    return "⚠️ The model returned no final answer. Try the same question again or switch models."
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _start_local_model_pull(model: str):
+    backend = professor.get_backend("ollama") if professor else None
+    if not isinstance(backend, OllamaBackend):
+        _update_model_operation(
+            state="error",
+            provider="ollama",
+            model=model,
+            status="Local Ollama backend is not available",
+            error="Local Ollama backend is not available",
+            progress=None,
+        )
+        return
+
+    def _progress(data: dict):
+        completed = data.get("completed")
+        total = data.get("total")
+        progress = None
+        if isinstance(completed, int) and isinstance(total, int) and total > 0:
+            progress = round((completed / total) * 100, 1)
+        _update_model_operation(
+            state="downloading",
+            provider="ollama",
+            model=model,
+            status=data.get("status", "Downloading model…"),
+            error="",
+            progress=progress,
+        )
+
+    def _worker():
+        try:
+            _update_model_operation(
+                state="downloading",
+                provider="ollama",
+                model=model,
+                status="Starting download…",
+                error="",
+                progress=0.0,
+                started_at=_now_iso(),
+            )
+            backend.pull_model(model, progress_callback=_progress)
+            professor.switch_model("ollama", model)
+            _update_model_operation(
+                state="completed",
+                provider="ollama",
+                model=model,
+                status="Model ready",
+                error="",
+                progress=100.0,
+            )
+            time.sleep(1.5)
+            _reset_model_operation()
+        except Exception as exc:
+            logger.error("Local model pull failed: %s", exc, exc_info=True)
+            _update_model_operation(
+                state="error",
+                provider="ollama",
+                model=model,
+                status=f"Download failed: {exc}",
+                error=str(exc),
+                progress=None,
+            )
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+
+
+def _lecture_search_tool_schema() -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "search_lectures",
+            "description": (
+                "Search uploaded lecture slides and notes for relevant course material. "
+                "Use this when course content is needed to answer accurately or cite slides."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Focused search query for the lecture material.",
+                    },
+                },
+            },
+        },
+    }
+
+
+def _lecture_tools_for_session(session: dict) -> list[dict]:
+    if not session.get("use_lectures", True):
+        return []
+    if not knowledge_base.is_loaded:
+        return []
+    stats = knowledge_base.get_stats()
+    if stats.get("total_documents", 0) <= 0:
+        return []
+    return [_lecture_search_tool_schema()]
+
+
+def _run_lecture_search(query: str, session: dict) -> tuple[str, list[str]]:
+    search_query = query.strip()
+    if session.get("topic"):
+        search_query = f"{session['topic']}: {search_query}"
+
+    contexts = knowledge_base.search(
+        query=search_query,
+        top_k=3,
+        course_filter=session.get("course_filter"),
+    )
+    relevant = [c for c in contexts if c.relevance_score >= 0.3]
+    sources_used = list(dict.fromkeys(
+        f"{c.source_filename} (slide {c.page_or_slide})"
+        for c in relevant
+    ))
+    payload = {
+        "query": query,
+        "results": [
+            {
+                "source": c.source_filename,
+                "slide": c.page_or_slide,
+                "lecture_title": c.lecture_title,
+                "course": c.course,
+                "relevance": c.relevance_score,
+                "excerpt": c.text[:400],
+            }
+            for c in relevant
+        ],
+        "message": "No relevant lecture material found." if not relevant else "",
+    }
+    return json.dumps(payload, ensure_ascii=False), sources_used
+
+
+def _prefetch_lecture_context(student_message: str, session: dict) -> tuple[str, list[str]]:
+    if not session.get("use_lectures", True):
+        return "", []
+    if not knowledge_base.is_loaded:
+        return "", []
+    stats = knowledge_base.get_stats()
+    if stats.get("total_documents", 0) <= 0:
+        return "", []
+
+    search_query = student_message.strip()
+    if session.get("topic"):
+        search_query = f"{session['topic']}: {search_query}"
+
+    contexts = knowledge_base.search(
+        query=search_query,
+        top_k=3,
+        course_filter=session.get("course_filter"),
+    )
+    lecture_context = knowledge_base.format_context_for_prompt(contexts, min_rel=0.3)
+    if not lecture_context:
+        return "", []
+
+    relevant = [c for c in contexts if c.relevance_score >= 0.3]
+    sources_used = list(dict.fromkeys(
+        f"{c.source_filename} (slide {c.page_or_slide})"
+        for c in relevant
+    ))
+    return lecture_context, sources_used
+
+
+def _handle_tool_call(call: dict, session: dict) -> tuple[Optional[dict], list[str]]:
+    function = call.get("function") or {}
+    name = function.get("name")
+    arguments = function.get("arguments") or {}
+    if name != "search_lectures":
+        return {
+            "role": "tool",
+            "tool_name": name or "unknown",
+            "content": json.dumps({"message": "Unknown tool"}, ensure_ascii=False),
+        }, []
+
+    query = arguments.get("query", "").strip() if isinstance(arguments, dict) else ""
+    if not query:
+        return {
+            "role": "tool",
+            "tool_name": "search_lectures",
+            "content": json.dumps({"message": "Missing required argument: query"}, ensure_ascii=False),
+        }, []
+
+    content, sources_used = _run_lecture_search(query, session)
+    return {
+        "role": "tool",
+        "tool_name": "search_lectures",
+        "content": content,
+    }, sources_used
+
+
+def _is_recall_like_mode(mode_id: str) -> bool:
+    normalized = (mode_id or "").strip().lower()
+    return normalized == "recall" or normalized.startswith("recall_")
+
+
+def _is_wrong_mode(mode_id: str) -> bool:
+    normalized = (mode_id or "").strip().lower()
+    return normalized.endswith("_wrong")
+
+
+def _should_apply_wrongness(mode_id: str) -> bool:
+    return _is_wrong_mode(mode_id) and random.random() < WRONG_MODE_ERROR_RATE
+
+
+def _mode_uses_lecture_support(mode_id: str, apply_wrongness: bool) -> bool:
+    # Recall-like modes stay minimal. Guided wrong modes still use lecture
+    # support on normal turns, but wrong turns stay ungrounded so the model
+    # can drift slightly off course.
+    if _is_recall_like_mode(mode_id):
+        return False
+    if apply_wrongness:
+        return False
+    return True
+
+
+def _generate_response_with_tools(
+    *,
+    student_message: str,
+    active_mode: str,
+    session: dict,
+    apply_wrongness: bool,
+) -> tuple[str, list[str], str]:
+    use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
+    tools = _lecture_tools_for_session(session) if use_lectures else []
+    lecture_context, prefetched_sources = (
+        _prefetch_lecture_context(student_message, session) if use_lectures else ("", [])
+    )
+    messages = professor.build_messages(
+        student_message=student_message,
+        mode_id=active_mode,
+        topic=session["topic"],
+        history=session["history"],
+        lecture_context=lecture_context,
+        apply_wrongness=apply_wrongness,
+    )
+    system_prompt = messages[0]["content"] if messages else ""
+    sources_used: list[str] = list(prefetched_sources)
+    last_content = ""
+
+    if not tools:
+        response_text = professor.generate(
+            student_message=student_message,
+            mode_id=active_mode,
+            topic=session["topic"],
+            history=session["history"],
+            lecture_context=lecture_context,
+            apply_wrongness=apply_wrongness,
+        )
+        if response_text.strip():
+            return response_text, list(dict.fromkeys(sources_used)), system_prompt
+        return "⚠️ The model returned no final answer. Try the same question again or switch models.", sources_used, system_prompt
+
+    for _ in range(3):
+        assistant_message = professor.chat_once(
+            messages=messages,
+            tools=tools,
+            mode_id=active_mode,
+            apply_wrongness=apply_wrongness,
+        )
+        messages.append(assistant_message)
+        last_content = (assistant_message.get("content") or "").strip()
+        tool_calls = assistant_message.get("tool_calls") or []
+        if not tool_calls:
+            if last_content:
+                return last_content, sources_used, system_prompt
+            return "⚠️ The model returned no final answer. Try the same question again or switch models.", sources_used, system_prompt
+
+        executed_any = False
+        for call in tool_calls:
+            tool_message, tool_sources = _handle_tool_call(call, session)
+            if tool_message:
+                messages.append(tool_message)
+                sources_used.extend(tool_sources)
+                executed_any = True
+        if not executed_any:
+            break
+
+    return last_content or "⚠️ Generation failed — the model did not complete the tool flow.", list(dict.fromkeys(sources_used)), system_prompt
+
+
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     if not professor or not professor.is_loaded:
-        raise HTTPException(503, "Model is still loading")
+        raise HTTPException(503, "No active model backend is available")
 
     session = sessions.get(req.session_id)
     if not session:
@@ -263,52 +736,63 @@ async def chat(req: ChatRequest):
             raise HTTPException(400, f"Unknown mode: {req.mode_override}")
         sessions.update_mode(req.session_id, req.mode_override)
 
-    # RAG retrieval
-    lecture_context = ""
-    sources_used = []
-
-    if session.get("use_lectures", True) and knowledge_base.is_loaded:
-        search_query = req.message
-        if session.get("topic"):
-            search_query = f"{session['topic']}: {search_query}"
-
-        contexts = knowledge_base.search(
-            query=search_query, top_k=5,
-            course_filter=session.get("course_filter"),
-        )
-        if contexts:
-            lecture_context = knowledge_base.format_context_for_prompt(contexts)
-            sources_used = list(set(
-                f"{c.source_filename} (slide {c.page_or_slide})"
-                for c in contexts if c.relevance_score >= 0.3
-            ))
+    is_social = professor.is_social_message(req.message)
+    apply_wrongness = _should_apply_wrongness(active_mode) if not is_social else False
+    sources_used: list[str] = []
+    system_prompt = ""
 
     # Generate
-    response_text = professor.generate(
-        student_message=req.message,
-        mode_id=active_mode,
-        topic=session["topic"],
-        history=session["history"],
-        lecture_context=lecture_context,
-    )
+    t0 = time.perf_counter()
+    if is_social:
+        response_text = professor.generate(
+            student_message=req.message,
+            mode_id=active_mode,
+            topic=session["topic"],
+            history=session["history"],
+            lecture_context="",
+            apply_wrongness=apply_wrongness,
+        )
+    else:
+        response_text, sources_used, system_prompt = _generate_response_with_tools(
+            student_message=req.message,
+            active_mode=active_mode,
+            session=session,
+            apply_wrongness=apply_wrongness,
+        )
+    duration_ms = int((time.perf_counter() - t0) * 1000)
 
     sessions.add_message(req.session_id, role="student", content=req.message)
     sessions.add_message(req.session_id, role="professor_tux", content=response_text)
+
+    # Log the interaction
+    chat_logger.log(ChatLogEntry(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        ip=_get_client_ip(request),
+        session_id=req.session_id,
+        mode=active_mode,
+        topic=session.get("topic"),
+        question=req.message,
+        system_prompt=system_prompt,
+        response=response_text,
+        sources_used=sources_used,
+        duration_ms=duration_ms,
+        model=professor.active_model,
+    ))
 
     return ChatResponse(
         session_id=req.session_id,
         mode=active_mode,
         response=response_text,
-        hint=mode_loader.get_hint(active_mode),
+        hint=None if is_social else mode_loader.get_hint(active_mode),
         sources_used=sources_used,
     )
 
 
 @app.post("/chat/stream", tags=["Chat"])
-async def chat_stream(req: ChatRequest):
-    """SSE streaming endpoint — tokens sent as they are generated."""
+async def chat_stream(req: ChatRequest, request: Request):
+    """SSE streaming endpoint backed by Ollama /api/chat streaming."""
     if not professor or not professor.is_loaded:
-        raise HTTPException(503, "Model is still loading")
+        raise HTTPException(503, "No active model backend is available")
 
     session = sessions.get(req.session_id)
     if not session:
@@ -320,81 +804,257 @@ async def chat_stream(req: ChatRequest):
             raise HTTPException(400, f"Unknown mode: {req.mode_override}")
         sessions.update_mode(req.session_id, req.mode_override)
 
-    # RAG retrieval
-    lecture_context = ""
-    sources_used = []
-
-    if session.get("use_lectures", True) and knowledge_base.is_loaded:
-        search_query = req.message
-        if session.get("topic"):
-            search_query = f"{session['topic']}: {search_query}"
-
-        contexts = knowledge_base.search(
-            query=search_query, top_k=5,
-            course_filter=session.get("course_filter"),
-        )
-        if contexts:
-            lecture_context = knowledge_base.format_context_for_prompt(contexts)
-            sources_used = list(set(
-                f"{c.source_filename} (slide {c.page_or_slide})"
-                for c in contexts if c.relevance_score >= 0.3
-            ))
+    is_social = professor.is_social_message(req.message)
+    apply_wrongness = _should_apply_wrongness(active_mode) if not is_social else False
+    client_ip = _get_client_ip(request)
 
     def _event_stream():
-        full_response = []
-        for token in professor.generate_stream(
-            student_message=req.message,
-            mode_id=active_mode,
-            topic=session["topic"],
-            history=session["history"],
-            lecture_context=lecture_context,
-        ):
-            full_response.append(token)
-            yield f"data: {json.dumps({'token': token})}\n\n"
+        t0 = time.perf_counter()
+        sources_used: list[str] = []
+        system_prompt = ""
+        response_parts: list[str] = []
 
-        # Send final event with metadata
-        response_text = "".join(full_response).strip()
+        try:
+            if is_social:
+                for token in professor.generate_stream(
+                    student_message=req.message,
+                    mode_id=active_mode,
+                    topic=session["topic"],
+                    history=session["history"],
+                    lecture_context="",
+                    apply_wrongness=apply_wrongness,
+                ):
+                    if not token:
+                        continue
+                    response_parts.append(token)
+                    yield _sse({"token": token})
+            else:
+                use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
+                tools = _lecture_tools_for_session(session) if use_lectures else []
+                lecture_context, prefetched_sources = (
+                    _prefetch_lecture_context(req.message, session) if use_lectures else ("", [])
+                )
+                sources_used.extend(prefetched_sources)
+                if not tools:
+                    messages = professor.build_messages(
+                        student_message=req.message,
+                        mode_id=active_mode,
+                        topic=session["topic"],
+                        history=session["history"],
+                        lecture_context=lecture_context,
+                        apply_wrongness=apply_wrongness,
+                    )
+                    system_prompt = messages[0]["content"] if messages else ""
+                    for token in professor.generate_stream(
+                        student_message=req.message,
+                        mode_id=active_mode,
+                        topic=session["topic"],
+                        history=session["history"],
+                        lecture_context=lecture_context,
+                        apply_wrongness=apply_wrongness,
+                    ):
+                        if not token:
+                            continue
+                        response_parts.append(token)
+                        yield _sse({"token": token})
+                else:
+                    messages = professor.build_messages(
+                        student_message=req.message,
+                        mode_id=active_mode,
+                        topic=session["topic"],
+                        history=session["history"],
+                        lecture_context=lecture_context,
+                        apply_wrongness=apply_wrongness,
+                    )
+                    system_prompt = messages[0]["content"] if messages else ""
+
+                    for _ in range(3):
+                        turn_parts: list[str] = []
+                        assistant_role = "assistant"
+                        tool_calls: list[dict] = []
+
+                        for chunk in professor.chat_stream_once(
+                            messages=messages,
+                            tools=tools,
+                            mode_id=active_mode,
+                            apply_wrongness=apply_wrongness,
+                        ):
+                            token = chunk.get("content") or ""
+                            if token:
+                                turn_parts.append(token)
+                                yield _sse({"token": token})
+                            assistant_role = chunk.get("role", assistant_role)
+                            if chunk.get("tool_calls"):
+                                tool_calls = chunk["tool_calls"]
+
+                        assistant_content = "".join(turn_parts)
+                        if turn_parts:
+                            response_parts.extend(turn_parts)
+                        assistant_message = {
+                            "role": assistant_role,
+                            "content": assistant_content,
+                        }
+                        if tool_calls:
+                            assistant_message["tool_calls"] = tool_calls
+                        messages.append(assistant_message)
+
+                        if not tool_calls:
+                            break
+
+                        executed_any = False
+                        for call in tool_calls:
+                            tool_message, tool_sources = _handle_tool_call(call, session)
+                            if not tool_message:
+                                continue
+                            messages.append(tool_message)
+                            sources_used.extend(tool_sources)
+                            executed_any = True
+                        if not executed_any:
+                            break
+                    else:
+                        if not response_parts:
+                            fallback = "⚠️ Generation failed — the model did not complete the tool flow."
+                            response_parts.append(fallback)
+                            yield _sse({"token": fallback})
+        except BackendError as exc:
+            logger.error("Streaming chat failed: %s", exc)
+            error_text = f"⚠️ Generation failed — {exc}"
+            yield _sse({"error": error_text})
+            yield _sse({"done": True, "mode": active_mode, "hint": None if is_social else mode_loader.get_hint(active_mode), "sources_used": list(dict.fromkeys(sources_used))})
+            return
+
+        response_text = "".join(response_parts).strip()
+        if not response_text:
+            response_text = _empty_response_fallback()
+            yield _sse({"token": response_text})
+
+        sources_used = list(dict.fromkeys(sources_used))
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         sessions.add_message(req.session_id, role="student", content=req.message)
         sessions.add_message(req.session_id, role="professor_tux", content=response_text)
-        yield f"data: {json.dumps({'done': True, 'mode': active_mode, 'hint': mode_loader.get_hint(active_mode), 'sources_used': sources_used})}\n\n"
 
-    return StreamingResponse(_event_stream(), media_type="text/event-stream")
+        chat_logger.log(ChatLogEntry(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            ip=client_ip,
+            session_id=req.session_id,
+            mode=active_mode,
+            topic=session.get("topic"),
+            question=req.message,
+            system_prompt=system_prompt,
+            response=response_text,
+            sources_used=sources_used,
+            duration_ms=duration_ms,
+            model=professor.active_model,
+        ))
 
+        yield _sse({
+            "done": True,
+            "mode": active_mode,
+            "hint": None if is_social else mode_loader.get_hint(active_mode),
+            "sources_used": sources_used,
+        })
 
-# ━━━━━━━━━━━━━━━━━━━━  MODELS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-MODELS_DIR = Path("./models")
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/models", tags=["Models"])
 async def list_models():
-    """List all available GGUF model files."""
-    models = []
-    if MODELS_DIR.exists():
-        for f in sorted(MODELS_DIR.iterdir()):
-            if f.suffix == ".gguf" and f.is_file():
-                models.append({
-                    "filename": f.name,
-                    "size_mb": round(f.stat().st_size / (1024 * 1024), 1),
-                    "active": professor is not None and professor.model_name == f.name,
-                })
-    return {"models": models}
+    """List model targets visible from the configured Ollama endpoint."""
+    return {"models": professor.list_available_models() if professor else []}
+
+
+@app.get("/admin/models/status", tags=["Admin"])
+async def get_model_status(token: str = Depends(verify_admin)):
+    return {
+        "operation": _get_model_operation(),
+        "active_model": professor.active_model if professor else "",
+        "model_loaded": professor.is_loaded if professor else False,
+        "base_url": _effective_local_base_url(),
+        "base_url_source": _local_base_url_source(),
+    }
+
+
+@app.put("/admin/models/connection", tags=["Admin"])
+async def update_model_connection(request: Request, token: str = Depends(verify_admin)):
+    body = await request.json()
+    if "base_url" not in body:
+        raise HTTPException(status_code=400, detail="base_url is required")
+    base_url = str(body.get("base_url", "") or "").strip()
+
+    with runtime_settings_lock:
+        runtime_settings["ollama_base_url"] = base_url
+    _save_runtime_settings()
+
+    professor.configure_backend(base_url=_effective_local_base_url())
+
+    return {
+        "base_url": _effective_local_base_url(),
+        "base_url_source": _local_base_url_source(),
+        "message": "Ollama URL updated" if base_url else "Ollama URL reset",
+    }
 
 
 @app.post("/admin/models/switch", tags=["Admin"])
 async def switch_model(request: Request, token: str = Depends(verify_admin)):
-    """Load a different GGUF model file."""
+    """Switch to a model on the configured Ollama endpoint."""
     body = await request.json()
-    filename = body.get("filename", "")
-    model_path = MODELS_DIR / filename
-    if not model_path.exists() or model_path.suffix != ".gguf":
-        raise HTTPException(400, f"Model not found: {filename}")
+    selection = (body.get("selection") or "").strip()
+    model = _normalize_model_name((body.get("model") or "").strip())
+    if selection and not model:
+        _, separator, parsed_model = selection.partition("::")
+        if separator:
+            model = _normalize_model_name(parsed_model.strip())
+    if not model:
+        raise HTTPException(400, "Model name is required")
+    operation = _get_model_operation()
+    if operation.get("state") == "downloading":
+        raise HTTPException(409, f"Another model is downloading: {operation.get('model')}")
     try:
-        professor.load_model_by_path(str(model_path))
+        backend = professor.get_backend("ollama") if professor else None
+        if not isinstance(backend, OllamaBackend):
+            raise HTTPException(500, "Ollama backend is not available")
+
+        should_auto_pull = backend.is_local_endpoint()
+
+        if should_auto_pull and backend.has_model(model):
+            professor.switch_model("ollama", model)
+            _reset_model_operation()
+            return {
+                "active_model": professor.active_model,
+                "message": f"Switched to {professor.active_model}",
+            }
+
+        if should_auto_pull:
+            _start_local_model_pull(model)
+            return {
+                "accepted": True,
+                "state": "downloading",
+                "provider": "ollama",
+                "model": model,
+                "message": f"Downloading {model}",
+            }
+
+        professor.switch_model("ollama", model)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except BackendError as e:
+        logger.error("Model switch failed: %s", e)
+        raise HTTPException(503, str(e))
     except Exception as e:
         logger.error("Model switch failed: %s", e, exc_info=True)
         raise HTTPException(500, f"Failed to load model: {e}")
-    return {"active_model": filename, "message": f"Switched to {filename}"}
+    _reset_model_operation()
+    return {
+        "active_model": professor.active_model,
+        "message": f"Switched to {professor.active_model}",
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━  LECTURES  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -468,15 +1128,68 @@ async def knowledge_base_stats():
     return KnowledgeBaseStatsResponse(**knowledge_base.get_stats())
 
 
+# ━━━━━━━━━━━━━━━━━━━━  CHAT LOGS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/admin/logs", tags=["Admin"])
+async def get_chat_logs(
+    token: str = Depends(verify_admin),
+    limit: int = 100,
+    offset: int = 0,
+    session_id: Optional[str] = None,
+    ip: Optional[str] = None,
+):
+    """Retrieve chat logs with optional filters."""
+    return chat_logger.get_logs(
+        limit=limit, offset=offset,
+        session_filter=session_id, ip_filter=ip,
+    )
+
+
+@app.delete("/admin/logs", tags=["Admin"])
+async def clear_chat_logs(token: str = Depends(verify_admin)):
+    """Clear all chat logs."""
+    count = chat_logger.clear()
+    return {"cleared": count, "message": f"Deleted {count} log entries"}
+
+
+@app.get("/admin/logs/download", tags=["Admin"])
+async def download_chat_logs(token: str = Depends(verify_admin)):
+    """Download the raw chat logs JSONL file."""
+    log_path = LOG_FILE_DIR / "chat_logs.jsonl"
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        raise HTTPException(404, "No chat logs to download")
+    return FileResponse(
+        str(log_path), media_type="application/jsonl",
+        filename="chat_logs.jsonl",
+    )
+
+
+@app.get("/admin/logs/download/server", tags=["Admin"])
+async def download_server_log(token: str = Depends(verify_admin)):
+    """Download the server log file."""
+    log_path = LOG_FILE_DIR / "professor_tux.log"
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        raise HTTPException(404, "No server logs to download")
+    return FileResponse(
+        str(log_path), media_type="text/plain",
+        filename="professor_tux.log",
+    )
+
+
 # ━━━━━━━━━━━━━━━━━━━━  HELPERS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _welcome_message(mode_def, topic: str | None, use_lectures: bool) -> str:
     topic_str = f" on **{topic}**" if topic else ""
     lec_str = ("\n📚 I have access to your lecture slides and will reference them."
                if use_lectures else "")
-    icon = mode_def.icon if mode_def else "🐧"
-    name = mode_def.name if mode_def else "Unknown Mode"
-    desc = mode_def.description if mode_def else ""
+    student_mode_def = mode_def
+    if mode_def and _is_wrong_mode(mode_def.id):
+        family_id = "guided" if mode_def.id.startswith("guided") else "recall"
+        student_mode_def = mode_loader.get_mode(family_id) or mode_def
+
+    icon = student_mode_def.icon if student_mode_def else "🐧"
+    name = student_mode_def.name if student_mode_def else "Unknown Mode"
+    desc = student_mode_def.description if student_mode_def else ""
 
     return (
         f"🐧 Welcome, student! I'm Professor Tux.\n\n"

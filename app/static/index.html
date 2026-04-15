@@ -3,660 +3,1525 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Professor Tux 🐧 — Cybersecurity Lab</title>
+<title>Professor Tux</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  /* Base layout colors (don't change with mode) */
-  --font-mono:'JetBrains Mono',monospace;
-
-  /* Mode-driven palette — defaults to recall (green) */
-  --bg-primary:#0c0c0c;
-  --bg-secondary:#0a0a0a;
-  --bg-terminal:#000000;
-  --border:#1a1a1a;
-  --border-active:#33ff00;
-  --text-primary:#33ff00;
-  --text-secondary:#22cc00;
-  --text-muted:#116600;
-  --text-white:#e0e0e0;
-  --accent:#33ff00;
-  --accent-dim:rgba(51,255,0,0.1);
-  --accent-cyan:#00ffff;
-  --accent-yellow:#ffff00;
-  --accent-purple:#ff00ff;
+  --font-ui:"IBM Plex Sans",sans-serif;
+  --font-mono:"JetBrains Mono",monospace;
+  --danger:#ff6a7d;
+  --warning:#ffd36d;
+  --success:#59f59f;
+  --chat-width:min(880px, calc(100vw - 32px));
 }
 
-/* ── RECALL MODE — green hacker terminal ── */
 body.theme-recall{
-  --bg-primary:#0c0c0c;
-  --bg-secondary:#0a0a0a;
-  --bg-terminal:#000000;
-  --border:#1a1a1a;
-  --border-active:#33ff00;
-  --text-primary:#33ff00;
-  --text-secondary:#22cc00;
-  --text-muted:#116600;
-  --text-white:#e0e0e0;
-  --accent:#33ff00;
-  --accent-dim:rgba(51,255,0,0.1);
-  --accent-cyan:#00ffff;
-  --accent-yellow:#ffff00;
-  --accent-purple:#ff00ff;
+  --bg:#0b0f0c;
+  --surface:#111713;
+  --surface-2:#171f1a;
+  --surface-3:#0f1511;
+  --border:#27352c;
+  --border-strong:#3d5f49;
+  --accent:#58ff93;
+  --accent-soft:rgba(88,255,147,0.12);
+  --accent-glow:rgba(88,255,147,0.14);
+  --text:#edf3ee;
+  --text-soft:#b8c2bb;
+  --text-muted:#7d8981;
 }
 
-/* ── GUIDED MODE — white/cool terminal ── */
 body.theme-guided{
-  --bg-primary:#0c0c0c;
-  --bg-secondary:#101015;
-  --bg-terminal:#0a0a0e;
-  --border:#2a2a35;
-  --border-active:#e0e0e0;
-  --text-primary:#e0e0e0;
-  --text-secondary:#b0b0b0;
-  --text-muted:#606070;
-  --text-white:#f0f0f0;
-  --accent:#e0e0e0;
-  --accent-dim:rgba(224,224,224,0.08);
-  --accent-cyan:#88ccff;
-  --accent-yellow:#ffd666;
-  --accent-purple:#c084fc;
+  --bg:#111315;
+  --surface:#1a1d21;
+  --surface-2:#22272c;
+  --surface-3:#16191d;
+  --border:#30363d;
+  --border-strong:#47515b;
+  --accent:#f4f7fb;
+  --accent-soft:rgba(244,247,251,0.12);
+  --accent-glow:rgba(244,247,251,0.12);
+  --text:#f5f7fa;
+  --text-soft:#c3cad3;
+  --text-muted:#8d96a2;
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;overflow:hidden}
-body{font-family:var(--font-mono);background:var(--bg-terminal);color:var(--text-primary);font-size:14px;line-height:1.6}
 
-/* Scrollbar */
-::-webkit-scrollbar{width:8px}
-::-webkit-scrollbar-track{background:var(--bg-secondary)}
-::-webkit-scrollbar-thumb{background:var(--text-muted);border-radius:0}
-::-webkit-scrollbar-thumb:hover{background:var(--text-secondary)}
+*,
+*::before,
+*::after{box-sizing:border-box}
 
-/* Terminal container */
-.app{display:flex;flex-direction:column;height:100vh;background:var(--bg-terminal)}
+html,body{height:100%;margin:0}
 
-/* Header - Terminal title bar */
-.header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--bg-secondary);border-bottom:2px solid var(--border);flex-shrink:0}
-.header-left{display:flex;align-items:center;gap:12px}
-.header-logo{font-size:24px;line-height:1;filter:drop-shadow(0 0 8px var(--accent))}
-.header-info{display:flex;flex-direction:column}
-.header-title{font-size:14px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:2px}
-.header-sub{font-size:11px;color:var(--text-muted);letter-spacing:1px}
-.header-right{display:flex;align-items:center;gap:12px}
+body{
+  font-family:var(--font-ui);
+  background:
+    radial-gradient(circle at top left, var(--accent-soft), transparent 18%),
+    radial-gradient(circle at bottom right, rgba(255,255,255,0.025), transparent 24%),
+    var(--bg);
+  color:var(--text);
+  overflow:hidden;
+  position:relative;
+}
 
-/* Terminal status indicators */
-.mode-badge{padding:4px 12px;border:1px solid var(--text-secondary);font-size:11px;font-weight:500;color:var(--accent);background:var(--accent-dim);font-family:var(--font-mono)}
-.status-pill{display:flex;align-items:center;gap:8px;padding:4px 12px;border:1px solid var(--border);font-size:11px;color:var(--text-secondary)}
-.status-dot{width:8px;height:8px;background:var(--accent);animation:blink 1s infinite}
-.status-dot.loading{background:var(--accent-yellow);animation:blink 0.5s infinite}
-.status-dot.offline{background:#ff0000}
-@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0.3}}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,0.02), transparent 12%, transparent 88%, rgba(255,255,255,0.02)),
+    repeating-linear-gradient(to right, transparent 0 179px, rgba(255,255,255,0.016) 179px 180px),
+    repeating-linear-gradient(to bottom, transparent 0 179px, rgba(255,255,255,0.012) 179px 180px);
+  opacity:.16;
+}
 
-/* Terminal screen */
-.terminal-screen{flex:1;overflow-y:auto;padding:16px;background:var(--bg-terminal);font-family:var(--font-mono)}
+button,input,textarea{font:inherit}
 
-/* Welcome screen */
-.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:24px;padding:40px;min-height:100%}
-.welcome-logo{width:180px;height:180px;object-fit:contain;filter:drop-shadow(0 0 30px var(--accent-dim)) drop-shadow(0 0 60px var(--accent-dim));animation:logoGlow 3s ease-in-out infinite alternate}
-@keyframes logoGlow{from{filter:drop-shadow(0 0 20px var(--accent-dim)) drop-shadow(0 0 40px var(--accent-dim))}to{filter:drop-shadow(0 0 30px var(--accent)) drop-shadow(0 0 60px var(--accent-dim))}}
-.welcome-text{font-size:12px;color:var(--text-secondary);max-width:600px;line-height:1.8}
-.welcome-hint{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:16px}
-.hint-chip{padding:6px 14px;border:1px solid var(--text-muted);font-size:11px;color:var(--text-secondary);cursor:pointer;transition:all 0.2s;font-family:var(--font-mono)}
-.hint-chip:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:999px}
+::-webkit-scrollbar-thumb:hover{background:var(--accent)}
 
-/* Terminal output lines */
-.terminal-line{display:flex;flex-direction:column;margin-bottom:8px;animation:fadeIn 0.15s ease-out}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.app{
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr) auto;
+  height:100vh;
+}
 
-/* Prompt styles */
-.prompt-line{display:flex;align-items:flex-start;gap:8px;margin-bottom:4px}
-.prompt-user{color:var(--accent);font-weight:600;white-space:nowrap}
-.prompt-host{color:var(--text-secondary)}
-.prompt-path{color:var(--accent-yellow)}
-.prompt-symbol{color:var(--accent);margin-left:4px}
-.prompt-input{color:var(--text-white);flex:1;word-break:break-word}
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:14px 20px;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent), rgba(0,0,0,0.12);
+  backdrop-filter:blur(14px);
+}
 
-/* AI response container */
-.ai-response{margin:8px 0 16px 0;padding-left:0}
-.ai-header{display:flex;align-items:center;gap:8px;color:var(--accent-cyan);font-weight:600;margin-bottom:8px}
-.ai-icon{width:24px;height:24px;object-fit:contain;filter:drop-shadow(0 0 5px var(--accent-cyan))}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
 
-/* Formatted content */
-.content-box{border-left:2px solid var(--accent);padding-left:16px;margin:8px 0;color:var(--text-primary);line-height:1.8}
-.content-box p{margin-bottom:12px}
-.content-box p:last-child{margin-bottom:0}
-.content-box strong{color:var(--accent);font-weight:600}
-.content-box em{color:var(--accent-yellow);font-style:italic}
-.content-box code{background:var(--bg-secondary);color:var(--accent-cyan);padding:2px 6px;font-family:var(--font-mono);font-size:13px;border:1px solid var(--border)}
-.content-box pre{background:var(--bg-secondary);border:1px solid var(--border);padding:12px;margin:12px 0;overflow-x:auto}
-.content-box pre code{background:transparent;border:none;padding:0;color:var(--text-white)}
-.content-box ul,.content-box ol{margin:12px 0;padding-left:24px}
-.content-box li{margin:4px 0;color:var(--text-primary)}
-.content-box li::marker{color:var(--accent)}
-.content-box blockquote{border-left:2px solid var(--text-muted);padding-left:12px;margin:12px 0;color:var(--text-secondary);font-style:italic}
-.content-box h1,.content-box h2,.content-box h3{color:var(--accent);margin:16px 0 8px 0;font-weight:600}
-.content-box h1{font-size:16px}
-.content-box h2{font-size:14px}
-.content-box h3{font-size:13px}
-.content-box hr{border:none;border-top:1px solid var(--border);margin:16px 0}
-.content-box a{color:var(--accent-cyan);text-decoration:none}
-.content-box a:hover{text-decoration:underline}
-.content-box table{border-collapse:collapse;width:100%;margin:12px 0}
-.content-box th,.content-box td{border:1px solid var(--border);padding:8px 12px;text-align:left}
-.content-box th{background:var(--bg-secondary);color:var(--accent)}
+.brand-mark{
+  width:36px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  box-shadow:0 0 16px var(--accent-glow);
+  font-size:20px;
+  line-height:1;
+}
 
-/* Sources */
-.sources-line{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;padding-left:16px}
-.source-tag{padding:2px 10px;border:1px solid var(--accent-purple);color:var(--accent-purple);font-size:10px;font-family:var(--font-mono)}
+.brand-copy{min-width:0}
 
-/* Hint */
-.hint-line{display:flex;align-items:center;gap:8px;margin-top:8px;padding-left:16px;color:var(--accent-yellow);font-size:12px}
-.hint-line::before{content:"💡";font-size:11px}
+.brand-title{
+  margin:0;
+  font-size:17px;
+  font-weight:700;
+  letter-spacing:-0.02em;
+}
 
-/* Thinking animation */
-.thinking-line{display:flex;align-items:center;gap:8px;color:var(--text-muted);font-size:12px;margin:8px 0;padding-left:16px}
-.thinking-dots{display:flex;gap:4px}
-.thinking-dot{width:6px;height:6px;background:var(--accent);animation:thinking 1.4s infinite}
-.thinking-dot:nth-child(2){animation-delay:0.2s}
-.thinking-dot:nth-child(3){animation-delay:0.4s}
-@keyframes thinking{0%,60%,100%{opacity:0.3}30%{opacity:1}}
+.brand-subtitle{
+  margin:3px 0 0;
+  color:var(--text-soft);
+  font-size:12px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 
-/* Input area - Terminal command line */
-.input-area{padding:12px 16px;background:var(--bg-secondary);border-top:2px solid var(--border);flex-shrink:0}
-.input-wrapper{display:flex;align-items:flex-start;gap:8px}
-.input-prompt{color:var(--accent);font-weight:600;white-space:nowrap;padding-top:10px}
-.input-box{flex:1;display:flex;align-items:flex-end;gap:8px;background:var(--bg-terminal);border:1px solid var(--border);padding:8px 12px;transition:border-color 0.2s}
-.input-box:focus-within{border-color:var(--accent)}
-.input-box.disabled{opacity:0.5;pointer-events:none}
-.chat-input{flex:1;background:transparent;border:none;color:var(--text-white);font-family:var(--font-mono);font-size:14px;line-height:1.5;resize:none;min-height:22px;max-height:120px;outline:none}
+.header-meta{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.pill{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.02);
+  color:var(--text-soft);
+  font:600 11px/1 var(--font-mono);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+
+.pill.mode{
+  border-color:var(--border-strong);
+  color:var(--accent);
+  background:var(--accent-soft);
+}
+
+.status-dot{
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  background:var(--warning);
+  box-shadow:0 0 0 4px rgba(255,255,255,0.03), 0 0 12px currentColor;
+}
+
+.pill[data-state="online"] .status-dot{background:var(--success)}
+.pill[data-state="downloading_model"] .status-dot{background:var(--warning);animation:pulse 1.1s ease-in-out infinite}
+.pill[data-state="no_model"] .status-dot,
+.pill[data-state="offline"] .status-dot{background:var(--danger)}
+
+.main{
+  min-height:0;
+  overflow:hidden;
+}
+
+.thread-shell{
+  width:100%;
+  height:100%;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+
+.feed{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:28px 0 20px;
+  scrollbar-gutter:stable both-edges;
+  display:flex;
+  flex-direction:column;
+  gap:24px;
+}
+
+.empty-state{
+  width:var(--chat-width);
+  flex:1;
+  min-height:100%;
+  display:grid;
+  place-items:center;
+  margin:0 auto;
+}
+
+.empty-inner{
+  width:min(720px, 100%);
+  text-align:center;
+}
+
+.empty-eyebrow{
+  display:block;
+  margin-bottom:12px;
+  font:600 10px/1 var(--font-mono);
+  text-transform:uppercase;
+  letter-spacing:.18em;
+  color:var(--accent);
+}
+
+.empty-title{
+  margin:0;
+  font-size:42px;
+  line-height:1.05;
+  letter-spacing:-0.04em;
+}
+
+.empty-copy{
+  margin:14px auto 0;
+  max-width:640px;
+  color:var(--text-soft);
+  font-size:16px;
+  line-height:1.6;
+}
+
+.scope-line{
+  margin-top:18px;
+  color:var(--text-muted);
+  font-size:13px;
+}
+
+.scope-line strong{
+  color:var(--text-soft);
+  font-weight:600;
+}
+
+.suggestions{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0,1fr));
+  gap:12px;
+  margin-top:28px;
+}
+
+.suggestion{
+  width:100%;
+  padding:16px 16px;
+  border-radius:18px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--text-soft);
+  text-align:left;
+  cursor:pointer;
+  transition:border-color .18s ease, transform .18s ease, color .18s ease, background .18s ease;
+}
+
+.suggestion:hover{
+  border-color:var(--accent);
+  background:var(--surface-2);
+  color:var(--text);
+  transform:translateY(-1px);
+}
+
+.suggestion-title{
+  display:block;
+  margin-bottom:6px;
+  font-size:14px;
+  font-weight:600;
+  color:var(--text);
+}
+
+.suggestion-copy{
+  display:block;
+  font-size:13px;
+  line-height:1.45;
+  color:var(--text-soft);
+}
+
+.turn{
+  width:var(--chat-width);
+  margin:0 auto;
+}
+
+.turn.user-turn{
+  display:flex;
+  justify-content:flex-end;
+}
+
+.user-bubble{
+  max-width:min(72%, 620px);
+  padding:14px 16px;
+  border-radius:18px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+}
+
+.assistant-turn{
+  display:block;
+}
+
+.assistant-head,
+.user-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+}
+
+.assistant-head{
+  width:100%;
+}
+
+.label{
+  font:600 11px/1 var(--font-mono);
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  color:var(--accent);
+}
+
+.assistant-body{
+  width:100%;
+  color:var(--text);
+  font-size:15px;
+  line-height:1.8;
+}
+
+.user-body{
+  color:var(--text);
+  font-size:15px;
+  line-height:1.7;
+}
+
+.assistant-body p,
+.user-body p{margin:0 0 12px}
+.assistant-body p:last-child,
+.user-body p:last-child{margin-bottom:0}
+
+.assistant-body h1,
+.assistant-body h2,
+.assistant-body h3{
+  margin:0 0 12px;
+  font-size:16px;
+  color:var(--text);
+}
+
+.assistant-body ul,
+.assistant-body ol{
+  margin:0 0 12px 20px;
+  padding:0;
+}
+
+.assistant-body li{margin:6px 0}
+.assistant-body strong{color:var(--text)}
+.assistant-body em{color:var(--text-soft)}
+.assistant-body a{color:var(--accent)}
+.assistant-body blockquote{
+  margin:0 0 12px;
+  padding-left:14px;
+  border-left:2px solid var(--border-strong);
+  color:var(--text-soft);
+}
+
+.assistant-body code,
+.user-body code{
+  padding:2px 6px;
+  border-radius:8px;
+  border:1px solid var(--border);
+  background:var(--surface-3);
+  font-family:var(--font-mono);
+  font-size:.92em;
+}
+
+.assistant-body pre,
+.user-body pre{
+  margin:14px 0;
+  padding:14px;
+  border-radius:16px;
+  border:1px solid var(--border);
+  background:var(--surface-3);
+  overflow:auto;
+}
+
+.assistant-body pre code,
+.user-body pre code{
+  padding:0;
+  border:none;
+  background:transparent;
+}
+
+.assistant-body .table-wrap,
+.user-body .table-wrap{
+  margin:14px 0;
+  overflow-x:auto;
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:var(--surface-3);
+}
+
+.assistant-body table,
+.user-body table{
+  width:100%;
+  min-width:560px;
+  border-collapse:collapse;
+  font-size:14px;
+  line-height:1.55;
+}
+
+.assistant-body th,
+.assistant-body td,
+.user-body th,
+.user-body td{
+  padding:12px 14px;
+  text-align:left;
+  vertical-align:top;
+  border-bottom:1px solid var(--border);
+}
+
+.assistant-body thead th,
+.user-body thead th{
+  background:rgba(255,255,255,0.02);
+  color:var(--text);
+  font:600 12px/1.35 var(--font-mono);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+
+.assistant-body tbody td,
+.user-body tbody td{
+  color:var(--text-soft);
+}
+
+.assistant-body tbody tr:last-child td,
+.user-body tbody tr:last-child td{
+  border-bottom:none;
+}
+
+.assistant-footer{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:14px;
+}
+
+.tag{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:rgba(255,255,255,0.02);
+  color:var(--text-soft);
+  font:500 11px/1.2 var(--font-mono);
+}
+
+.tag.hint{
+  border-color:rgba(255,211,109,0.28);
+  color:#ffe8b0;
+}
+
+.tag.source{
+  border-color:var(--border-strong);
+}
+
+.thinking{
+  width:var(--chat-width);
+  display:flex;
+  align-items:center;
+  gap:12px;
+  color:var(--text-soft);
+  margin:0 auto;
+}
+
+.thinking-dots{
+  display:flex;
+  gap:6px;
+}
+
+.thinking-dots span{
+  width:7px;
+  height:7px;
+  border-radius:999px;
+  background:var(--accent);
+  opacity:.25;
+  animation:thinking 1.1s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2){animation-delay:.14s}
+.thinking-dots span:nth-child(3){animation-delay:.28s}
+
+.notice{
+  width:var(--chat-width);
+  padding:12px 14px;
+  border-radius:16px;
+  border:1px solid rgba(255,106,125,0.24);
+  background:rgba(255,106,125,0.06);
+  color:var(--text-soft);
+  font-size:13px;
+  line-height:1.5;
+  margin:0 auto;
+}
+
+.composer{
+  border-top:1px solid var(--border);
+  background:linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,0.16)), rgba(0,0,0,0.14);
+  backdrop-filter:blur(14px);
+}
+
+.composer-inner{
+  width:var(--chat-width);
+  margin:0 auto;
+  padding:14px 0 20px;
+}
+
+.composer-banner{
+  display:none;
+  margin-bottom:10px;
+  padding:12px 14px;
+  border-radius:16px;
+  border:1px solid rgba(255,106,125,0.24);
+  background:rgba(255,106,125,0.06);
+}
+
+.composer-banner.is-visible{display:block}
+
+.composer-banner strong{
+  display:block;
+  margin-bottom:4px;
+  font-size:14px;
+}
+
+.composer-banner p{
+  margin:0;
+  color:var(--text-soft);
+  font-size:13px;
+  line-height:1.5;
+}
+
+.composer-card{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  min-height:72px;
+  padding:10px 12px 10px 18px;
+  border-radius:20px;
+  border:1px solid color-mix(in srgb, var(--border-strong) 58%, transparent);
+  background:linear-gradient(180deg, rgba(255,255,255,0.015), transparent), var(--surface-3);
+  box-shadow:0 10px 30px rgba(0,0,0,0.24);
+  transition:border-color .18s ease, box-shadow .18s ease, opacity .18s ease, transform .18s ease;
+}
+
+.composer-card:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-soft), 0 14px 34px rgba(0,0,0,0.28);
+}
+
+.composer-card.is-disabled{
+  opacity:.86;
+}
+
+.chat-input{
+  display:block;
+  width:100%;
+  min-height:28px;
+  max-height:180px;
+  padding:8px 0;
+  resize:none;
+  border:none;
+  outline:none;
+  background:transparent;
+  color:var(--text);
+  font-size:16px;
+  line-height:1.5;
+  overflow-y:auto;
+}
+
 .chat-input::placeholder{color:var(--text-muted)}
-.send-btn{width:32px;height:32px;border:none;background:transparent;color:var(--accent);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
-.send-btn:hover{color:var(--text-white);text-shadow:0 0 10px var(--accent)}
-.send-btn:disabled{color:var(--text-muted);cursor:not-allowed}
 
-/* Cursor blink */
-.cursor{display:inline-block;width:8px;height:16px;background:var(--accent);animation:cursor-blink 1s infinite;vertical-align:middle;margin-left:2px}
-@keyframes cursor-blink{0%,50%{opacity:1}51%,100%{opacity:0}}
+.chat-input:disabled{
+  opacity:1;
+  cursor:not-allowed;
+}
 
-/* Toast */
-.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:10px 20px;background:var(--bg-secondary);border:1px solid #ff0000;color:#ff0000;font-family:var(--font-mono);font-size:12px;opacity:0;transition:opacity 0.3s;z-index:999}
-.toast.show{opacity:1}
+.send-btn{
+  min-width:82px;
+  height:44px;
+  padding:0 16px;
+  border-radius:13px;
+  border:1px solid var(--border-strong);
+  background:rgba(255,255,255,0.04);
+  color:var(--text);
+  font-weight:700;
+  cursor:pointer;
+  justify-self:end;
+}
 
-/* Responsive */
+.send-btn:hover:not(:disabled){
+  border-color:var(--accent);
+  background:var(--accent-soft);
+  box-shadow:0 0 0 3px rgba(255,255,255,0.03);
+}
+
+.send-btn:disabled{
+  opacity:.5;
+  cursor:not-allowed;
+}
+
+.toast{
+  position:fixed;
+  left:50%;
+  bottom:22px;
+  transform:translateX(-50%);
+  padding:12px 16px;
+  border-radius:999px;
+  border:1px solid rgba(255,106,125,0.25);
+  background:rgba(18,24,28,0.94);
+  color:var(--text);
+  box-shadow:0 14px 40px rgba(0,0,0,0.45);
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .2s ease, transform .2s ease;
+}
+
+.toast.show{
+  opacity:1;
+  transform:translateX(-50%) translateY(-2px);
+}
+
+@keyframes pulse{
+  0%,100%{transform:scale(1);opacity:1}
+  50%{transform:scale(.82);opacity:.55}
+}
+
+@keyframes thinking{
+  0%,100%{opacity:.25;transform:translateY(0)}
+  45%{opacity:1;transform:translateY(-2px)}
+}
+
+@media(max-width:900px){
+  .suggestions{
+    grid-template-columns:1fr;
+  }
+
+  .user-bubble{
+    max-width:100%;
+  }
+}
+
 @media(max-width:640px){
-  .header{padding:8px 12px}
-  .terminal-screen{padding:12px}
-  .welcome-logo{width:120px;height:120px}
-  .content-box{padding-left:12px}
+  .header{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .header-meta{
+    justify-content:flex-start;
+  }
+
+  .composer-inner{
+    width:calc(100vw - 20px);
+  }
+
+  .empty-title{
+    font-size:34px;
+  }
+
+  .main{
+    min-height:0;
+  }
 }
 </style>
 </head>
-<body>
+<body class="theme-recall">
 <div class="app">
-  <div class="header">
-    <div class="header-left">
-      <span class="header-logo">🐧</span>
-      <div class="header-info">
-        <div class="header-title">Professor Tux</div>
-        <div class="header-sub">CYBERSECURITY LAB v3.0</div>
+  <header class="header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">🐧</div>
+      <div class="brand-copy">
+        <h1 class="brand-title">Professor Tux</h1>
+        <p class="brand-subtitle" id="brandSubtitle">Connecting to the teaching engine...</p>
       </div>
     </div>
-    <div class="header-right">
-      <div class="mode-badge" id="modeBadge">INIT...</div>
-      <div class="status-pill">
-        <div class="status-dot loading" id="statusDot"></div>
-        <span id="statusText">CONNECTING</span>
-      </div>
-    </div>
-  </div>
 
-  <div class="terminal-screen" id="terminal">
-    <div class="welcome" id="welcomeScreen">
-      <img class="welcome-logo" src="/static/logo.png" alt="Professor Tux">
-      <div style="font-size:20px;font-weight:700;color:var(--accent);letter-spacing:3px;text-transform:uppercase">Professor Tux</div>
-      <div class="welcome-text">
-        Welcome to the Cybersecurity Lab. I'm Professor Tux, your AI instructor.<br>
-        Ask me anything about network security, cryptography, forensics, and more.
-      </div>
-      <div class="welcome-hint">
-        <div class="hint-chip" onclick="quickAsk('What is SQL injection?')">sql_injection?</div>
-        <div class="hint-chip" onclick="quickAsk('Explain buffer overflows')">buffer_overflows</div>
-        <div class="hint-chip" onclick="quickAsk('How does XSS work?')">xss_vectors</div>
-        <div class="hint-chip" onclick="quickAsk('Teach me about MITM attacks')">mitm_attacks</div>
+    <div class="header-meta">
+      <div class="pill mode" id="modePill">Recall Mode</div>
+      <div class="pill" id="statusPill" data-state="loading">
+        <span class="status-dot"></span>
+        <span id="statusLabel">Connecting</span>
       </div>
     </div>
-  </div>
+  </header>
 
-  <div class="input-area">
-    <div class="input-wrapper">
-      <span class="input-prompt">student@cybersec:~$</span>
-      <div class="input-box disabled" id="inputBox">
-        <textarea class="chat-input" id="chatInput" rows="1" placeholder="Initializing system..." onkeydown="handleKey(event)" oninput="autoGrow(this)"></textarea>
-        <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>⏎</button>
+  <main class="main">
+    <div class="thread-shell">
+      <div class="feed" id="feed">
+        <section class="empty-state" id="emptyState">
+          <div class="empty-inner">
+            <span class="empty-eyebrow" id="emptyEyebrow">Recall Mode</span>
+            <h2 class="empty-title" id="emptyTitle">Get a quick recall nudge</h2>
+            <p class="empty-copy" id="emptyCopy">Recall Mode is for use during an exam: brief factual cues, one small hint at a time, and no long explanations.</p>
+            <div class="scope-line">Topic: <strong id="scopeTopic">Open cybersecurity scope</strong> · Course: <strong id="scopeCourse">All uploaded material</strong> · Lectures: <strong id="scopeLectures">Enabled</strong></div>
+            <div class="suggestions" id="suggestions"></div>
+          </div>
+        </section>
       </div>
     </div>
-  </div>
+  </main>
+
+  <footer class="composer">
+    <div class="composer-inner">
+      <div class="composer-banner" id="blockedBanner">
+        <strong id="blockedTitle">No model ready</strong>
+        <p id="blockedCopy">Professor Tux cannot answer until an Ollama endpoint and model are configured.</p>
+        <p id="blockedMeta"></p>
+      </div>
+
+      <div class="composer-card is-disabled" id="composerCard">
+        <textarea class="chat-input" id="chatInput" rows="1" placeholder="Waiting for the teaching engine..." disabled></textarea>
+        <button class="send-btn" id="sendBtn" type="button" disabled>Send</button>
+      </div>
+    </div>
+  </footer>
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
 const API = location.origin;
-let state = { sessionId:null, mode:'recall', isGenerating:false, modelLoaded:false };
-let modesMap = {};
 
-async function init() {
-  try { 
-    const resp = await fetch(API + '/modes');
-    const d = await resp.json();
-    d.modes.forEach(function(m) { modesMap[m.id] = m; });
-  } catch(e) {}
-  await waitForServer();
-  await createSession();
+const SUGGESTIONS = [
+  {
+    title: "Web Security",
+    recall: "Give me one quick hint on how XSS differs from CSRF.",
+    guided: "Teach me the main web application vulnerabilities with examples."
+  },
+  {
+    title: "Cryptography",
+    recall: "Give me one recall cue on hashing vs encryption.",
+    guided: "Teach me cryptography fundamentals from first principles."
+  },
+  {
+    title: "Network Defense",
+    recall: "Give me a one-line nudge on IDS vs IPS.",
+    guided: "Walk me through network defense fundamentals step by step."
+  },
+  {
+    title: "Incident Response",
+    recall: "Remind me of the first incident response phase without giving the full sequence.",
+    guided: "Walk me through the incident response lifecycle."
+  }
+];
+
+const MODE_UI = {
+  recall: {
+    label: "Recall Mode",
+    title: "Get a quick recall nudge",
+    copy: "Recall Mode is for use during an exam: brief factual cues, one small hint at a time, and no long explanations.",
+    composerPlaceholder: "e.g. Give me one quick hint on TLS handshake steps...",
+    subtitle: "Recall mode for in-exam use"
+  },
+  guided: {
+    label: "Guided Learning",
+    title: "Ask for explanation or walkthroughs",
+    copy: "Professor Tux is tuned for teaching, examples, hints, and step-by-step cybersecurity explanations.",
+    composerPlaceholder: "Ask Professor Tux to teach, explain, or walk through a topic...",
+    subtitle: "Guided chat"
+  },
+  recall_wrong: {
+    label: "Recall Mode",
+    title: "Get a quick recall nudge",
+    copy: "Recall Mode is for use during an exam: brief factual cues, one small hint at a time, and no long explanations.",
+    composerPlaceholder: "e.g. Give me one quick hint on TLS handshake steps...",
+    subtitle: "Recall mode for in-exam use"
+  },
+  guided_wrong: {
+    label: "Guided Learning",
+    title: "Ask for explanation or walkthroughs",
+    copy: "Professor Tux is tuned for teaching, examples, hints, and step-by-step cybersecurity explanations.",
+    composerPlaceholder: "Ask Professor Tux to teach, explain, or walk through a topic...",
+    subtitle: "Guided chat"
+  }
+};
+
+const state = {
+  sessionId: null,
+  mode: "recall",
+  isGenerating: false,
+  modelLoaded: false,
+  modelStatus: "loading",
+  modelStatusDetail: "",
+  health: null,
+  adminConfig: {
+    mode: "recall",
+    topic: "",
+    courseFilter: "",
+    useLectures: true
+  },
+  modesMap: {},
+  turnCount: 0,
+  healthPollId: null
+};
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function escapeAttribute(text) {
+  return escapeHtml(text).replace(/"/g, "&quot;");
+}
+
+function autoGrow(element) {
+  element.style.height = "auto";
+  element.style.height = Math.min(element.scrollHeight, 180) + "px";
+}
+
+function scrollFeed() {
+  const feed = document.getElementById("feed");
+  requestAnimationFrame(function() {
+    feed.scrollTop = feed.scrollHeight;
+  });
+}
+
+function showToast(text) {
+  const toast = document.getElementById("toast");
+  toast.textContent = text;
+  toast.classList.add("show");
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(function() {
+    toast.classList.remove("show");
+  }, 2600);
+}
+
+function modeFamily(modeId) {
+  const normalized = String(modeId || "").toLowerCase();
+  return normalized.indexOf("guided") === 0 ? "guided" : "recall";
+}
+
+function isWrongMode(modeId) {
+  return String(modeId || "").toLowerCase().endsWith("_wrong");
+}
+
+function renderSuggestions() {
+  const container = document.getElementById("suggestions");
+  const family = modeFamily(state.mode);
+  container.innerHTML = SUGGESTIONS.map(function(item) {
+    const prompt = item[state.mode] || item[family] || item.recall;
+    return [
+      '<button class="suggestion" type="button" data-prompt="' + escapeAttribute(prompt) + '">',
+      '<span class="suggestion-title">' + escapeHtml(item.title) + "</span>",
+      '<span class="suggestion-copy">' + escapeHtml(prompt) + "</span>",
+      "</button>"
+    ].join("");
+  }).join("");
+}
+
+function updateIntroVisibility() {
+  document.getElementById("emptyState").style.display = state.turnCount === 0 ? "" : "none";
+}
+
+function updateModeUI() {
+  document.body.classList.remove("theme-recall", "theme-guided");
+  const family = modeFamily(state.mode);
+  document.body.classList.add("theme-" + family);
+
+  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
+  const modeInfo = state.modesMap[state.mode] || {};
+  const label = isWrongMode(state.mode) ? meta.label : (modeInfo.name || meta.label);
+
+  document.getElementById("modePill").textContent = label;
+  document.getElementById("emptyEyebrow").textContent = label;
+  document.getElementById("emptyTitle").textContent = meta.title;
+  document.getElementById("emptyCopy").textContent = meta.copy;
+  document.getElementById("chatInput").placeholder = state.modelLoaded ? meta.composerPlaceholder : "Waiting for the teaching engine...";
+
+  renderSuggestions();
+  updateBrandSubtitle();
+}
+
+function updateScopeUI() {
+  document.getElementById("scopeTopic").textContent = state.adminConfig.topic || "Open cybersecurity scope";
+  document.getElementById("scopeCourse").textContent = state.adminConfig.courseFilter || "All uploaded material";
+  document.getElementById("scopeLectures").textContent = state.adminConfig.useLectures === false ? "Disabled" : "Enabled";
+  updateBrandSubtitle();
+}
+
+function updateBrandSubtitle() {
+  const parts = [];
+  const family = modeFamily(state.mode);
+  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
+  parts.push(meta.subtitle || (family === "recall" ? "Recall mode for in-exam use" : "Guided chat"));
+  if (state.adminConfig.topic) parts.push(state.adminConfig.topic);
+  if (state.adminConfig.courseFilter) parts.push(state.adminConfig.courseFilter);
+  if (!state.adminConfig.topic && !state.adminConfig.courseFilter) parts.push("All cybersecurity topics");
+  document.getElementById("brandSubtitle").textContent = parts.join(" • ");
+}
+
+function setComposerReady(isReady) {
+  const card = document.getElementById("composerCard");
+  const input = document.getElementById("chatInput");
+  const sendBtn = document.getElementById("sendBtn");
+  const family = modeFamily(state.mode);
+  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
+
+  card.classList.toggle("is-disabled", !isReady);
+  input.disabled = !isReady || state.isGenerating;
+  sendBtn.disabled = !isReady || state.isGenerating;
+  input.placeholder = isReady ? meta.composerPlaceholder : "Waiting for the teaching engine...";
+}
+
+function healthPresentation(status) {
+  if (status === "online") {
+    return {
+      label: "Model Ready",
+      blocked: false,
+      title: "Professor Tux is ready",
+      copy: "The teaching engine is connected and ready for chat.",
+      meta: state.health && state.health.active_model ? "Model: " + state.health.active_model : "Model ready"
+    };
+  }
+  if (status === "downloading_model") {
+    return {
+      label: "Downloading Model",
+      blocked: true,
+      title: "Model is still downloading",
+      copy: "Professor Tux will be ready after the selected model finishes downloading.",
+      meta: state.modelStatusDetail || "Download in progress"
+    };
+  }
+  if (status === "no_model") {
+    return {
+      label: "No Model",
+      blocked: true,
+      title: "No model ready",
+      copy: "Professor Tux cannot answer until an Ollama endpoint and model are configured.",
+      meta: state.modelStatusDetail || "Ask your admin to configure Ollama and select a model."
+    };
+  }
+  if (status === "offline") {
+    return {
+      label: "Offline",
+      blocked: true,
+      title: "Student chat is disconnected",
+      copy: "The browser cannot reach the Professor Tux server right now.",
+      meta: "API did not respond"
+    };
+  }
+  return {
+    label: "Connecting",
+    blocked: true,
+    title: "Professor Tux is starting up",
+    copy: "The teaching engine is still initializing.",
+    meta: state.modelStatusDetail || "Startup in progress"
+  };
+}
+
+function updateHealthUI() {
+  const status = state.modelStatus || "loading";
+  const presentation = healthPresentation(status);
+
+  const pill = document.getElementById("statusPill");
+  pill.dataset.state = status;
+  document.getElementById("statusLabel").textContent = presentation.label;
+
+  document.getElementById("blockedTitle").textContent = presentation.title;
+  document.getElementById("blockedCopy").textContent = presentation.copy;
+  document.getElementById("blockedMeta").textContent = presentation.meta;
+  document.getElementById("blockedBanner").classList.toggle("is-visible", presentation.blocked);
+
+  setComposerReady(state.modelLoaded);
+}
+
+function stagePrompt(prompt, sendNow) {
+  const input = document.getElementById("chatInput");
+  input.value = prompt;
+  autoGrow(input);
+  input.focus();
+
+  if (sendNow && state.modelLoaded) {
+    sendMessage();
+  } else if (sendNow && !state.modelLoaded) {
+    showToast("Prompt staged. Professor Tux is not ready yet.");
+  }
+}
+
+function addNotice(text) {
+  const feed = document.getElementById("feed");
+  const notice = document.createElement("div");
+  notice.className = "notice";
+  notice.textContent = text;
+  feed.appendChild(notice);
+  scrollFeed();
+}
+
+function addUserMessage(text) {
+  const feed = document.getElementById("feed");
+  const row = document.createElement("div");
+  row.className = "turn user-turn";
+  row.innerHTML = [
+    '<article class="user-bubble">',
+    '<div class="user-head">',
+    '<span class="label">You</span>',
+    "</div>",
+    '<div class="user-body"><p>' + escapeHtml(text) + "</p></div>",
+    "</article>"
+  ].join("");
+  feed.appendChild(row);
+  scrollFeed();
+}
+
+function addThinkingCard() {
+  const feed = document.getElementById("feed");
+  const row = document.createElement("div");
+  const id = "thinking-" + Date.now();
+  row.id = id;
+  row.className = "turn assistant-turn";
+  row.innerHTML = [
+    '<div class="thinking-card">',
+    '<div class="thinking">',
+    "<strong>Professor Tux is thinking</strong>",
+    '<div class="thinking-dots"><span></span><span></span><span></span></div>',
+    "</div>",
+    "</div>"
+  ].join("");
+  feed.appendChild(row);
+  scrollFeed();
+  return id;
+}
+
+function removeThinkingCard(id) {
+  const node = document.getElementById(id);
+  if (node) node.remove();
+}
+
+function createAssistantCard() {
+  const feed = document.getElementById("feed");
+  const row = document.createElement("div");
+  row.className = "turn assistant-turn";
+  row.innerHTML = [
+    '<article class="assistant-card">',
+    '<div class="assistant-head">',
+    '<span class="label">Professor Tux</span>',
+    "</div>",
+    '<div class="assistant-body"></div>',
+    '<div class="assistant-footer"></div>',
+    "</article>"
+  ].join("");
+  feed.appendChild(row);
+  scrollFeed();
+  const article = row.querySelector(".assistant-card");
+  return {
+    body: article.querySelector(".assistant-body"),
+    footer: article.querySelector(".assistant-footer")
+  };
+}
+
+function appendAssistantFooter(footer, sources, hint) {
+  footer.innerHTML = "";
+  if (sources && sources.length) {
+    sources.forEach(function(source) {
+      const tag = document.createElement("span");
+      tag.className = "tag source";
+      tag.textContent = source;
+      footer.appendChild(tag);
+    });
+  }
+  if (hint) {
+    const tag = document.createElement("span");
+    tag.className = "tag hint";
+    tag.textContent = hint;
+    footer.appendChild(tag);
+  }
+}
+
+function formatInline(text) {
+  return text
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/__(.+?)__/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/_(.+?)_/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function isTableRow(line) {
+  return /^\|(.+\|)+\s*$/.test(line);
+}
+
+function isTableDivider(line) {
+  return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$/.test(line);
+}
+
+function parseTableCells(line) {
+  return line
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map(function(cell) {
+      return formatInline(cell.trim());
+    });
+}
+
+function renderTable(headerCells, bodyRows) {
+  const head = "<thead><tr>" + headerCells.map(function(cell) {
+    return "<th>" + cell + "</th>";
+  }).join("") + "</tr></thead>";
+
+  const body = bodyRows.length
+    ? "<tbody>" + bodyRows.map(function(row) {
+        return "<tr>" + row.map(function(cell) {
+          return "<td>" + cell + "</td>";
+        }).join("") + "</tr>";
+      }).join("") + "</tbody>"
+    : "";
+
+  return '<div class="table-wrap"><table>' + head + body + "</table></div>";
+}
+
+function formatMarkdown(text) {
+  let escaped = escapeHtml(text);
+  const codeBlocks = [];
+
+  escaped = escaped.replace(/```([\w-]+)?\n([\s\S]*?)```/g, function(match, lang, code) {
+    const block = "<pre><code>" + code + "</code></pre>";
+    const token = "@@CODE" + codeBlocks.length + "@@";
+    codeBlocks.push(block);
+    return token;
+  });
+
+  const lines = escaped.split("\n");
+  const out = [];
+  let inUl = false;
+  let inOl = false;
+  let paragraph = [];
+
+  function closeParagraph() {
+    if (!paragraph.length) return;
+    out.push("<p>" + paragraph.join("<br>") + "</p>");
+    paragraph = [];
+  }
+
+  function closeLists() {
+    if (inUl) {
+      out.push("</ul>");
+      inUl = false;
+    }
+    if (inOl) {
+      out.push("</ol>");
+      inOl = false;
+    }
+  }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+
+    if (!line) {
+      closeParagraph();
+      closeLists();
+      continue;
+    }
+
+    const codeMatch = line.match(/^@@CODE(\d+)@@$/);
+    if (codeMatch) {
+      closeParagraph();
+      closeLists();
+      out.push(codeBlocks[Number(codeMatch[1])]);
+      continue;
+    }
+
+    if (isTableRow(line) && i + 1 < lines.length && isTableDivider(lines[i + 1].trim())) {
+      closeParagraph();
+      closeLists();
+      const headerCells = parseTableCells(line);
+      const bodyRows = [];
+      i += 2;
+
+      while (i < lines.length) {
+        const nextLine = lines[i].trim();
+        if (!nextLine || !isTableRow(nextLine) || isTableDivider(nextLine)) {
+          break;
+        }
+        bodyRows.push(parseTableCells(nextLine));
+        i += 1;
+      }
+
+      i -= 1;
+      out.push(renderTable(headerCells, bodyRows));
+      continue;
+    }
+
+    const h3 = line.match(/^###\s+(.+)$/);
+    const h2 = line.match(/^##\s+(.+)$/);
+    const h1 = line.match(/^#\s+(.+)$/);
+    if (h3 || h2 || h1) {
+      closeParagraph();
+      closeLists();
+      const content = formatInline((h3 || h2 || h1)[1]);
+      out.push(h3 ? "<h3>" + content + "</h3>" : h2 ? "<h2>" + content + "</h2>" : "<h1>" + content + "</h1>");
+      continue;
+    }
+
+    const ul = line.match(/^-\s+(.+)$/);
+    if (ul) {
+      closeParagraph();
+      if (inOl) {
+        out.push("</ol>");
+        inOl = false;
+      }
+      if (!inUl) {
+        out.push("<ul>");
+        inUl = true;
+      }
+      out.push("<li>" + formatInline(ul[1]) + "</li>");
+      continue;
+    }
+
+    const ol = line.match(/^\d+\.\s+(.+)$/);
+    if (ol) {
+      closeParagraph();
+      if (inUl) {
+        out.push("</ul>");
+        inUl = false;
+      }
+      if (!inOl) {
+        out.push("<ol>");
+        inOl = true;
+      }
+      out.push("<li>" + formatInline(ol[1]) + "</li>");
+      continue;
+    }
+
+    const quote = line.match(/^&gt;\s?(.+)$/);
+    if (quote) {
+      closeParagraph();
+      closeLists();
+      out.push("<blockquote>" + formatInline(quote[1]) + "</blockquote>");
+      continue;
+    }
+
+    closeLists();
+    paragraph.push(formatInline(line));
+  }
+
+  closeParagraph();
+  closeLists();
+  return out.join("");
+}
+
+function bindEvents() {
+  document.getElementById("sendBtn").addEventListener("click", sendMessage);
+  document.getElementById("chatInput").addEventListener("keydown", function(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  });
+  document.getElementById("chatInput").addEventListener("input", function() {
+    autoGrow(this);
+  });
+
+  document.getElementById("suggestions").addEventListener("click", function(event) {
+    const button = event.target.closest("button[data-prompt]");
+    if (!button) return;
+    stagePrompt(button.dataset.prompt, true);
+  });
+}
+
+async function loadModes() {
+  try {
+    const response = await fetch(API + "/modes");
+    if (!response.ok) return;
+    const data = await response.json();
+    data.modes.forEach(function(mode) {
+      state.modesMap[mode.id] = mode;
+    });
+  } catch (error) {}
+}
+
+async function loadPublicConfig() {
+  try {
+    const response = await fetch(API + "/admin/config/public");
+    if (!response.ok) return;
+    const config = await response.json();
+    state.adminConfig = config;
+    state.mode = config.mode || state.mode;
+  } catch (error) {}
+  updateScopeUI();
+  updateModeUI();
+}
+
+async function refreshHealth() {
+  try {
+    const response = await fetch(API + "/health");
+    if (!response.ok) throw new Error("Health check failed");
+    const data = await response.json();
+    state.health = data;
+    state.modelLoaded = Boolean(data.model_loaded);
+    state.modelStatus = data.status || "loading";
+    state.modelStatusDetail = data.status_detail || "";
+    updateHealthUI();
+    manageHealthPolling();
+    return true;
+  } catch (error) {
+    state.health = null;
+    state.modelLoaded = false;
+    state.modelStatus = "offline";
+    state.modelStatusDetail = "";
+    updateHealthUI();
+    manageHealthPolling();
+    return false;
+  }
+}
+
+function manageHealthPolling() {
+  const shouldPoll = !state.modelLoaded || state.modelStatus === "downloading_model" || state.modelStatus === "offline";
+  if (shouldPoll && !state.healthPollId) {
+    state.healthPollId = setInterval(refreshHealth, 4000);
+  }
+  if (!shouldPoll && state.healthPollId) {
+    clearInterval(state.healthPollId);
+    state.healthPollId = null;
+  }
 }
 
 async function waitForServer() {
-  const dot = document.getElementById('statusDot');
-  const txt = document.getElementById('statusText');
-  while(true) {
-    try {
-      const resp = await fetch(API + '/health');
-      const d = await resp.json();
-      state.modelLoaded = d.model_loaded;
-      if(d.model_loaded) {
-        dot.className = 'status-dot';
-        txt.textContent = 'ONLINE';
-        return;
-      }
-      if(d.status === 'no_model') {
-        dot.className = 'status-dot loading';
-        txt.textContent = 'NO MODEL';
-        return; // Don't block — let session create, show message in chat
-      }
-      dot.className = 'status-dot loading';
-      txt.textContent = 'LOADING';
-    } catch(e) {
-      dot.className = 'status-dot offline';
-      txt.textContent = 'OFFLINE';
-    }
-    await new Promise(r => setTimeout(r, 3000));
+  while (true) {
+    const ok = await refreshHealth();
+    if (ok) return;
+    await new Promise(function(resolve) { setTimeout(resolve, 3000); });
   }
 }
 
 async function createSession() {
-  try {
-    let cfg = {mode:'recall',topic:'',courseFilter:'',useLectures:true};
-    try{
-      const r = await fetch(API + '/admin/config/public');
-      if(r.ok) cfg = await r.json();
-    } catch(e) {}
-    state.mode = cfg.mode || 'recall';
-    updateBadge();
-    
-    const resp = await fetch(API + '/sessions', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        mode: cfg.mode || 'recall',
-        topic: cfg.topic || null,
-        course_filter: cfg.courseFilter || null,
-        use_lectures: cfg.useLectures !== false
-      })
-    });
-    const d = await resp.json();
-    state.sessionId = d.session_id;
-    
-    // Show welcome message in terminal style
-    const welcome = document.getElementById('welcomeScreen');
-    if(welcome) {
-      addSystemLine('SESSION_INITIALIZED');
-      addSystemLine('MODE: ' + (modesMap[state.mode]?.name || state.mode).toUpperCase());
-    }
+  const payload = {
+    mode: state.mode,
+    topic: state.adminConfig.topic || null,
+    course_filter: state.adminConfig.courseFilter || null,
+    use_lectures: state.adminConfig.useLectures !== false
+  };
 
-    if(state.modelLoaded) {
-      document.getElementById('inputBox').classList.remove('disabled');
-      document.getElementById('chatInput').placeholder = 'Enter command...';
-      document.getElementById('sendBtn').disabled = false;
-    } else {
-      addSystemLine('');
-      addSystemLine('⚠ NO MODEL LOADED — Ask your admin to select a model from the admin panel.');
-      document.getElementById('chatInput').placeholder = 'Waiting for model...';
-      pollForModel();
-    }
-  } catch(e) {
-    showToast('Connection failed — retrying...');
-    setTimeout(createSession, 3000);
+  const response = await fetch(API + "/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not create session");
   }
+
+  const data = await response.json();
+  state.sessionId = data.session_id;
 }
 
-function updateBadge() {
-  const badge = document.getElementById('modeBadge');
-  const m = modesMap[state.mode];
-  badge.textContent = m ? `[${m.id.toUpperCase()}]` : `[${state.mode.toUpperCase()}]`;
-  applyTheme();
-}
+async function openChatStream(message, allowSessionRefresh) {
+  const response = await fetch(API + "/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: state.sessionId, message: message })
+  });
 
-function applyTheme() {
-  // Remove all theme-* classes, then add the active one
-  document.body.className = document.body.className.replace(/theme-\S+/g, '').trim();
-  document.body.classList.add('theme-' + state.mode);
-}
+  if (response.ok) {
+    return response;
+  }
 
-function pollForModel() {
-  const iv = setInterval(async () => {
-    try {
-      const resp = await fetch(API + '/health');
-      const d = await resp.json();
-      if(d.model_loaded) {
-        clearInterval(iv);
-        state.modelLoaded = true;
-        document.getElementById('statusDot').className = 'status-dot';
-        document.getElementById('statusText').textContent = 'ONLINE';
-        document.getElementById('inputBox').classList.remove('disabled');
-        document.getElementById('chatInput').placeholder = 'Enter command...';
-        document.getElementById('sendBtn').disabled = false;
-        addSystemLine('✓ MODEL LOADED — Ready to chat.');
-      }
-    } catch(e) {}
-  }, 4000);
-}
+  let detail = "Request failed";
+  try {
+    const errorPayload = await response.json();
+    detail = errorPayload.detail || detail;
+  } catch (error) {
+    detail = "HTTP " + response.status;
+  }
 
-function addSystemLine(text) {
-  const term = document.getElementById('terminal');
-  const line = document.createElement('div');
-  line.className = 'terminal-line';
-  line.innerHTML = `<span style="color:var(--text-muted)">[SYSTEM] ${escapeHtml(text)}</span>`;
-  term.appendChild(line);
-  scrollB();
+  if (allowSessionRefresh && response.status === 404 && /session not found/i.test(detail)) {
+    state.sessionId = null;
+    await createSession();
+    return openChatStream(message, false);
+  }
+
+  throw new Error(detail);
 }
 
 async function sendMessage() {
-  const input = document.getElementById('chatInput');
-  const msg = input.value.trim();
-  if(!msg || !state.sessionId || state.isGenerating) return;
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+
+  if (!message || state.isGenerating) return;
+  if (!state.modelLoaded) {
+    showToast("Professor Tux is not ready.");
+    return;
+  }
+
+  if (!state.sessionId) {
+    try {
+      await createSession();
+    } catch (error) {
+      showToast("Could not start a session.");
+      return;
+    }
+  }
 
   state.isGenerating = true;
-  input.value = '';
+  setComposerReady(true);
+
+  input.value = "";
   autoGrow(input);
-  document.getElementById('sendBtn').disabled = true;
 
-  const welcome = document.getElementById('welcomeScreen');
-  if(welcome) welcome.remove();
+  state.turnCount += 1;
+  updateIntroVisibility();
+  addUserMessage(message);
 
-  // Add user command line
-  addUserCommand(msg);
-
-  // Show thinking animation until first token arrives
-  const thinkingId = addThinking();
-  let streamingContainer = null;
+  const thinkingId = addThinkingCard();
+  let assistantCard = null;
+  let rawText = "";
 
   try {
-    const resp = await fetch(API + '/chat/stream', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({session_id: state.sessionId, message: msg})
-    });
+    const response = await openChatStream(message, true);
+    if (!response.body) throw new Error("Streaming response is unavailable");
 
-    const reader = resp.body.getReader();
+    const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let rawText = '';
-    let leftover = '';
+    let remainder = "";
 
-    while(true) {
-      const { done, value } = await reader.read();
-      if(done) break;
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
 
-      const chunk = leftover + decoder.decode(value, {stream: true});
-      leftover = '';
-      const lines = chunk.split('\n');
+      const text = remainder + decoder.decode(chunk.value, { stream: true });
+      const lines = text.split("\n");
+      remainder = "";
 
-      // Last element may be incomplete
-      if(!chunk.endsWith('\n')) {
-        leftover = lines.pop();
+      if (!text.endsWith("\n")) {
+        remainder = lines.pop() || "";
       }
 
-      for(const line of lines) {
-        if(!line.startsWith('data: ')) continue;
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        let payload;
         try {
-          const payload = JSON.parse(line.slice(6));
-          if(payload.token) {
-            // On first token, swap thinking for the streaming container
-            if(!streamingContainer) {
-              removeThinking(thinkingId);
-              streamingContainer = addStreamingResponse();
-            }
-            rawText += payload.token;
-            streamingContainer.contentEl.innerHTML = formatMarkdown(rawText);
-            scrollB();
+          payload = JSON.parse(line.slice(6));
+        } catch (error) {
+          continue;
+        }
+
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+
+        if (payload.token) {
+          if (!assistantCard) {
+            removeThinkingCard(thinkingId);
+            assistantCard = createAssistantCard();
           }
-          if(payload.done) {
-            // Remove thinking if stream ended with no tokens
-            if(!streamingContainer) removeThinking(thinkingId);
-            // Append sources and hint
-            if(streamingContainer && payload.sources_used && payload.sources_used.length) {
-              const srcDiv = document.createElement('div');
-              srcDiv.className = 'sources-line';
-              srcDiv.innerHTML = payload.sources_used.map(function(s) {
-                return '<span class="source-tag">' + escapeHtml(s) + '</span>';
-              }).join('');
-              streamingContainer.lineEl.appendChild(srcDiv);
-            }
-            if(streamingContainer && payload.hint) {
-              const hintDiv = document.createElement('div');
-              hintDiv.className = 'hint-line';
-              hintDiv.textContent = payload.hint;
-              streamingContainer.lineEl.appendChild(hintDiv);
-            }
-            if(payload.mode && payload.mode !== state.mode) {
-              state.mode = payload.mode;
-              updateBadge();
-            }
+          rawText += payload.token;
+          assistantCard.body.innerHTML = formatMarkdown(rawText);
+          scrollFeed();
+        }
+
+        if (payload.done) {
+          removeThinkingCard(thinkingId);
+          if (!assistantCard) {
+            assistantCard = createAssistantCard();
+            assistantCard.body.innerHTML = formatMarkdown(rawText || "⚠️ The model returned no text.");
           }
-        } catch(e) {}
+
+          appendAssistantFooter(assistantCard.footer, payload.sources_used || [], payload.hint || "");
+
+          if (payload.mode && payload.mode !== state.mode) {
+            state.mode = payload.mode;
+            updateModeUI();
+          }
+        }
       }
     }
-  } catch(e) {
-    removeThinking(thinkingId);
-    addSystemLine('ERROR: ' + e.message);
+  } catch (error) {
+    removeThinkingCard(thinkingId);
+    addNotice("Generation failed: " + error.message);
+    await refreshHealth();
   } finally {
     state.isGenerating = false;
-    document.getElementById('sendBtn').disabled = false;
-    document.getElementById('chatInput').focus();
+    setComposerReady(state.modelLoaded);
+    input.focus();
   }
 }
 
-function addUserCommand(cmd) {
-  const term = document.getElementById('terminal');
-  const line = document.createElement('div');
-  line.className = 'terminal-line';
-  line.innerHTML = `
-    <div class="prompt-line">
-      <span class="prompt-user">student</span><span class="prompt-host">@</span><span class="prompt-host">cybersec</span><span class="prompt-path">:~$</span>
-      <span class="prompt-input">${escapeHtml(cmd)}</span>
-    </div>
-  `;
-  term.appendChild(line);
-  scrollB();
-}
-
-function addThinking() {
-  const term = document.getElementById('terminal');
-  const id = 'thinking-' + Date.now();
-  const line = document.createElement('div');
-  line.id = id;
-  line.className = 'terminal-line';
-  line.innerHTML = `
-    <div class="thinking-line">
-      <span>thinking</span>
-      <div class="thinking-dots">
-        <div class="thinking-dot"></div>
-        <div class="thinking-dot"></div>
-        <div class="thinking-dot"></div>
-      </div>
-    </div>
-  `;
-  term.appendChild(line);
-  scrollB();
-  return id;
-}
-
-function removeThinking(id) {
-  const el = document.getElementById(id);
-  if(el) el.remove();
-}
-
-function addStreamingResponse() {
-  const term = document.getElementById('terminal');
-  const line = document.createElement('div');
-  line.className = 'terminal-line ai-response';
-
-  line.innerHTML = `
-    <div class="ai-header">
-      <img class="ai-icon" src="/static/logo.png" alt="Tux">
-      <span>professor-tux@ai:~$</span>
-    </div>
-    <div class="content-box"></div>
-  `;
-  term.appendChild(line);
-  scrollB();
-  return { lineEl: line, contentEl: line.querySelector('.content-box') };
-}
-
-function addAIResponse(text, sources, hint) {
-  const term = document.getElementById('terminal');
-  const line = document.createElement('div');
-  line.className = 'terminal-line ai-response';
-
-  const formattedText = formatMarkdown(text);
-  let sourcesHtml = '';
-  let hintHtml = '';
-
-  if(sources && sources.length) {
-    sourcesHtml = `
-      <div class="sources-line">
-        ${sources.map(s => `<span class="source-tag">${escapeHtml(s)}</span>`).join('')}
-      </div>
-    `;
+async function init() {
+  bindEvents();
+  updateScopeUI();
+  updateModeUI();
+  updateIntroVisibility();
+  await loadModes();
+  updateModeUI();
+  await waitForServer();
+  await loadPublicConfig();
+  try {
+    await createSession();
+  } catch (error) {
+    showToast("Could not create the initial session.");
   }
-
-  if(hint) {
-    hintHtml = `<div class="hint-line">${escapeHtml(hint)}</div>`;
-  }
-
-  line.innerHTML = `
-    <div class="ai-header">
-      <img class="ai-icon" src="/static/logo.png" alt="Tux">
-      <span>professor-tux@ai:~$</span>
-    </div>
-    <div class="content-box">${formattedText}</div>
-    ${sourcesHtml}
-    ${hintHtml}
-  `;
-
-  term.appendChild(line);
-  scrollB();
-}
-
-function formatMarkdown(text) {
-  // Escape HTML first
-  let html = escapeHtml(text);
-  
-  // Headers
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  
-  // Bold and italic
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-  
-  // Code blocks
-  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
-  // Lists
-  html = html.replace(/^(\s*)-\s+(.+)$/gm, (match, indent, content) => {
-    const level = indent.length / 2;
-    return `<li style="margin-left:${level * 20}px">${content}</li>`;
-  });
-  html = html.replace(/^(\s*)\d+\.\s+(.+)$/gm, (match, indent, content) => {
-    const level = indent.length / 2;
-    return `<li style="margin-left:${level * 20}px">${content}</li>`;
-  });
-  
-  // Wrap consecutive li elements in ul
-  html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\n?)+/g, '<ul>$&</ul>');
-  
-  // Blockquotes
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-  
-  // Tables
-  html = html.replace(/(^\|.+\|[ ]*\n\|[-| :]+\|[ ]*\n(\|.+\|[ ]*\n?)+)/gm, function(tableBlock) {
-    const rows = tableBlock.trim().split('\n');
-    if(rows.length < 2) return tableBlock;
-    const parseRow = function(r) { return r.replace(/^\||\|$/g,'').split('|').map(function(c){return c.trim()}); };
-    const headers = parseRow(rows[0]);
-    // rows[1] is separator — skip
-    let t = '<table><thead><tr>' + headers.map(function(h){return '<th>'+h+'</th>'}).join('') + '</tr></thead><tbody>';
-    for(let i=2; i<rows.length; i++) {
-      if(!rows[i].trim()) continue;
-      const cells = parseRow(rows[i]);
-      t += '<tr>' + cells.map(function(c){return '<td>'+c+'</td>'}).join('') + '</tr>';
-    }
-    t += '</tbody></table>';
-    return t;
-  });
-
-  // Horizontal rule
-  html = html.replace(/^---+$/gm, '<hr>');
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-  // Line breaks
-  html = html.replace(/\n/g, '<br>');
-  
-  return html;
-}
-
-function quickAsk(t) {
-  document.getElementById('chatInput').value = t;
-  sendMessage();
-}
-
-function handleKey(e) {
-  if(e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-}
-
-function autoGrow(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
-
-function escapeHtml(t) {
-  const d = document.createElement('div');
-  d.textContent = t;
-  return d.innerHTML;
-}
-
-function scrollB() {
-  const t = document.getElementById('terminal');
-  requestAnimationFrame(() => { t.scrollTop = t.scrollHeight; });
-}
-
-function showToast(t) {
-  const el = document.getElementById('toast');
-  el.textContent = t;
-  el.className = 'toast show';
-  clearTimeout(el._t);
-  el._t = setTimeout(() => { el.className = 'toast'; }, 3000);
 }
 
 init();

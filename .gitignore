@@ -4,6 +4,8 @@ models/*.gguf
 # Data
 data/chromadb/
 data/uploads/
+data/logs/
+data/admin_runtime.json
 
 # Python
 __pycache__/

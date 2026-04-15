@@ -44,6 +44,8 @@ class HealthResponse(BaseModel):
     total_lecture_chunks: int = 0
     available_modes: list[str] = []
     active_model: str = ""
+    active_provider: str = ""
+    status_detail: str = ""
 
 
 class SessionCreateResponse(BaseModel):

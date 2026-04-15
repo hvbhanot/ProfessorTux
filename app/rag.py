@@ -231,16 +231,14 @@ class LectureKnowledgeBase:
     def format_context_for_prompt(self, contexts: list[RetrievedContext], min_rel: float = 0.3) -> str:
         relevant = [c for c in contexts if c.relevance_score >= min_rel]
         if not relevant: return ""
-        lines = ["━━━ RELEVANT LECTURE MATERIAL ━━━",
-                 "Use this material to ground your teaching in what has been covered in class.\n"]
+        lines = []
         for c in relevant:
-            src = f"📎 {c.source_filename}"
-            if c.lecture_title: src += f" — {c.lecture_title}"
-            if c.page_or_slide: src += f" (Slide {c.page_or_slide})"
-            src += f" [{c.relevance_score:.0%}]"
-            lines.extend([src, c.text, ""])
-        lines.append("━━━ END LECTURE MATERIAL ━━━")
-        return "\n".join(lines)
+            src = c.source_filename
+            if c.page_or_slide: src += f" slide {c.page_or_slide}"
+            # Truncate long chunks to save context for small models
+            text = c.text[:400] if len(c.text) > 400 else c.text
+            lines.append(f"[{src}] {text}")
+        return "\n\n".join(lines)
 
     def list_documents(self) -> list[dict]:
         return [d.to_dict() for d in self._documents.values()]

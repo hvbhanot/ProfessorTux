@@ -27,7 +27,7 @@ import os
 import re
 import logging
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger("professor_tux.modes")

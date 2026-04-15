@@ -98,7 +98,7 @@ def main():
         spinner_thread.join()
         
         if not h["model_loaded"]:
-            print(f"{Colors.YELLOW}[!] Model still loading... Please wait.{Colors.RESET}\n")
+            print(f"{Colors.YELLOW}[!] No active model target is ready yet. Check Ollama or switch models from /admin.{Colors.RESET}\n")
             return
         
         print(f"{Colors.BRIGHT_GREEN}[✓] Connected | Modes: {', '.join(h['available_modes'])} | KB: {h['total_lecture_chunks']} chunks{Colors.RESET}\n")

@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps for llama-cpp, PyMuPDF
+# Native build deps for Python wheels and document parsing libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake && rm -rf /var/lib/apt/lists/*
 

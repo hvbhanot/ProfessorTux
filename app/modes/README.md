@@ -8,7 +8,8 @@ AI-powered cybersecurity teaching assistant with **pluggable teaching modes**, *
 professor_tux/
 ├── app/
 │   ├── main.py              # FastAPI routes, admin auth, all endpoints
-│   ├── professor.py          # LLM wrapper (llama-cpp-python)
+│   ├── professor.py         # Prompt builder + backend orchestration
+│   ├── llm_backends.py      # Ollama + cloud backend adapters
 │   ├── mode_loader.py        # Auto-discovers teaching modes from .md files
 │   ├── models.py             # Pydantic request/response schemas
 │   ├── sessions.py           # In-memory session manager
@@ -34,17 +35,22 @@ professor_tux/
 # 1. Clone & install
 pip install -r requirements.txt
 
-# 2. Configure
-cp .env.example .env
-# Edit .env → set MODEL_PATH to your .gguf file
+# 2. Start Ollama and pull a model
+ollama serve
+ollama pull llama3.1:8b
 
-# 3. Run
+# 3. Configure
+cp .env.example .env
+# Edit .env → set OLLAMA_MODEL or optional cloud settings
+
+# 4. Run
 python run.py
 ```
 
 - **Student chat**: http://localhost:8000
 - **Admin panel**: http://localhost:8000/admin (default: `admin` / `professortux`)
-- **API docs**: http://localhost:8000/docs
+- **Product docs**: http://localhost:8000/docs
+- **API docs**: http://localhost:8000/api/docs
 
 ## Pluggable Teaching Modes
 
@@ -174,9 +180,8 @@ Changes made in admin are immediately reflected for new student sessions.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL_PATH` | `./models/DASD-4B-Thinking.Q4_K_M.gguf` | Path to GGUF model |
-| `N_CTX` | `4096` | Context window |
-| `N_GPU_LAYERS` | `0` | GPU layers (-1 = all) |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server URL (local or remote) |
+| `OLLAMA_MODEL` | `llama3.1:8b` | Default model target |
 | `MAX_TOKENS` | `1024` | Max response tokens |
 | `TEMPERATURE` | `0.7` | Sampling temperature |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model |
