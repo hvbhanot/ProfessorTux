@@ -1,6 +1,3 @@
-# Models
-models/*.gguf
-
 # Data
 data/chromadb/
 data/uploads/

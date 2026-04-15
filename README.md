@@ -1,241 +1,233 @@
-# 🐧 Professor Tux
+# Professor Tux
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+Professor Tux is a FastAPI-based cybersecurity teaching app with:
 
-> AI-powered cybersecurity teaching assistant with **pluggable teaching modes**, **lecture slide RAG**, and a split **student/admin** web interface. The runtime uses a single **Ollama-compatible chat endpoint** with local Ollama as the default.
+- a student chat UI at `/`
+- an admin panel at `/admin`
+- lecture upload and retrieval support
+- Ollama-compatible model backends
+- file-driven teaching modes in `app/modes/`
 
-![Professor Tux Screenshot](https://via.placeholder.com/800x400/0a0e14/00e5ff?text=Professor+Tux+Cybersecurity+Lab)
+Full product docs live at `/docs` after the server is running. API reference lives at `/api/docs`.
 
-## ✨ Features
+## What it does
 
-- 🧠 **Pluggable Teaching Modes** — Create custom teaching styles via markdown files
-- 📚 **Lecture RAG Pipeline** — Upload PDFs/PPTX and ground answers in course materials
-- 🛠️ **Lecture-Grounded Guided Mode** — Guided Learning prefetches relevant uploaded lecture context and can still use lecture search tools when needed
-- 🔌 **Single Ollama Backend** — Point Professor Tux at any Ollama-compatible `/api/chat` endpoint
-- ⬇️ **Auto Pull Local Models** — For local Ollama endpoints, type a model name in admin and Professor Tux will pull it automatically if it is not installed yet
-- 🎨 **Modern Web UI** — Terminal-themed student interface + admin panel
-- 💻 **Terminal CLI Client** — Hackers-style command line interface
-- 🔄 **Hot Reload** — Add new teaching modes without restarting
-- 🔐 **Admin Panel** — Manage modes, uploads, and configuration
+- `Guided Learning` teaches, explains, and walks through topics step by step.
+- `Recall Mode` is a constrained hint-first mode for use during an exam.
+- Admins can upload lecture material and configure the default runtime behavior.
+- Guided mode can use uploaded lecture context; Recall mode intentionally stays minimal.
 
-## 🚀 Quick Start
+## Requirements
 
-### Prerequisites
+- Python `3.10+`
+- `python3`, `venv`, and `pip`
+- [Ollama](https://ollama.com) running locally or reachable over the network
+- At least one available model, for example `qwen3.5:4b`
 
-- Python 3.10+
-- [Ollama](https://ollama.com) running locally or on a reachable host
-- At least one pulled Ollama model, such as `llama3.1:8b`
+## Fast setup
 
-### Installation
+Clone the repo and run:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/professor-tux.git
-cd professor-tux
+git clone https://github.com/hvbhanot/ProfessorTux.git
+cd ProfessorTux
+./setup.sh
+```
 
-# Install dependencies
+What `setup.sh` does:
+
+- creates `.venv` if missing
+- upgrades `pip`
+- installs `requirements.txt`
+- creates `.env` from `.env.example` if missing
+- creates `data/uploads`, `data/chromadb`, and `data/logs`
+- prints the next commands you need to run
+
+If your shell blocks execution, run:
+
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+## Manual setup
+
+If you prefer doing it by hand:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
-
-# Start Ollama and pull a model
-ollama serve
-ollama pull llama3.1:8b
-
-# Configure environment
 cp .env.example .env
-# Edit .env if you want a different default model or Ollama endpoint
-
-# Run the server
-python run.py
+mkdir -p data/uploads data/chromadb data/logs
 ```
 
-### Access Points
+## Configure Ollama
 
-| Endpoint | URL | Description |
-|----------|-----|-------------|
-| Student Chat | http://localhost:8000 | Main learning interface |
-| Admin Panel | http://localhost:8000/admin | Mode & lecture management |
-| Product Docs | http://localhost:8000/docs | Full setup and usage guide |
-| API Docs | http://localhost:8000/api/docs | Swagger/OpenAPI documentation |
-
-**Default admin credentials:** `admin` / `professortux`
-
-### Terminal Client
+Start Ollama and make sure a model exists:
 
 ```bash
-python client.py
+ollama serve
+ollama pull qwen3.5:4b
 ```
 
-A hacker-themed CLI with spinner animations, terminal prompts, and typing effects.
-
-## 🤖 Ollama Endpoint
-
-Professor Tux routes generation through a single **Ollama-compatible chat endpoint** instead of loading `.gguf` files directly.
-
-### Default: Local Ollama
+Default `.env` values:
 
 ```bash
-# .env
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=llama3.1:8b
+OLLAMA_MODEL=qwen3.5:4b
 ```
 
-Recommended Ollama models:
-
-| Model | Best For | Command |
-|-------|----------|---------|
-| **llama3.1:8b** | Strong general-purpose teaching | `ollama pull llama3.1:8b` |
-| **qwen2.5:7b** | Fast local reasoning | `ollama pull qwen2.5:7b` |
-| **mistral:7b** | Lightweight explanations | `ollama pull mistral:7b` |
-
-### Cloud Models
-
-To run Ollama Cloud models, sign in on the host once:
+For cloud-backed Ollama models, sign in on the same host:
 
 ```bash
 ollama signin
 ```
 
-The local daemon then transparently forwards any `:*-cloud` model (e.g. `gpt-oss:120b-cloud`) to Ollama Cloud — Professor Tux keeps pointing at your normal local `OLLAMA_BASE_URL`, no API key needed. See [docs.ollama.com/cloud](https://docs.ollama.com/cloud).
+Then keep `OLLAMA_BASE_URL` pointed at the local Ollama daemon and switch to a `:*-cloud` model from the admin page.
 
-## 🏗️ Architecture
+## Run the app
 
-```
-professor-tux/
-├── app/
-│   ├── main.py              # FastAPI routes & endpoints
-│   ├── professor.py         # Prompt builder + backend orchestration
-│   ├── llm_backends.py      # Ollama-compatible backend adapter
-│   ├── mode_loader.py       # Auto-discovers teaching modes
-│   ├── rag.py               # RAG pipeline (ChromaDB)
-│   ├── sessions.py          # Session management
-│   ├── models.py            # Pydantic schemas
-│   ├── modes/               # Teaching mode definitions
-│   │   ├── recall.md        # 🧠 Socratic mode
-│   │   └── guided.md        # 📖 Guided learning
-│   └── static/              # Web UI assets
-├── data/                    # ChromaDB & uploads (not in git)
-├── run.py                   # Server entry point
-├── client.py                # Terminal CLI client
-├── requirements.txt
-└── Dockerfile
-```
-
-## 🎓 Teaching Modes
-
-Modes are markdown files in `app/modes/` with YAML frontmatter:
-
-```markdown
----
-id: recall
-name: Socratic Recall
-icon: 🧠
-color: "#00e5ff"
-description: Guide students through questions
-hint_message: 💡 What do you remember?
----
-
-You are in Socratic mode. Never give direct answers...
-```
-
-### Built-in Modes
-
-| Mode | Icon | Description |
-|------|------|-------------|
-| **Recall** | 🧠 | Minimal in-exam cues and hint-only nudges |
-| **Guided** | 📖 | Full explanations with examples |
-
-### Creating Custom Modes
-
-1. Create `app/modes/mymode.md`
-2. Add frontmatter + system prompt
-3. Reload via admin panel or restart server
-
-See [`app/modes/README.md`](app/modes/README.md) for full guide.
-
-## 📚 RAG Pipeline
-
-Upload lecture materials via the admin panel:
-
-1. **Upload** → PDF, PPTX, TXT, or MD files
-2. **Extract** → Text + speaker notes extracted
-3. **Chunk** → 500-char overlapping chunks
-4. **Embed** → all-MiniLM-L6-v2 embeddings
-5. **Retrieve** → Top-5 relevant chunks per query
-6. **Call tool when needed** → The model can invoke lecture search only when course context is actually useful
-7. **Cite** → Sources shown as purple tags
-
-## 🔌 API Endpoints
-
-### Chat
-```bash
-POST /sessions          # Create session
-POST /chat              # Send message
-GET  /sessions/{id}     # Get history
-```
-
-### Modes
-```bash
-GET  /modes             # List modes
-POST /modes/reload      # Hot-reload (admin)
-```
-
-### Lectures
-```bash
-POST /lectures/upload   # Upload file
-GET  /lectures          # List documents
-POST /lectures/search   # Semantic search
-```
-
-### Admin
-```bash
-POST /admin/login       # Authenticate
-GET  /admin/config      # Get config
-PUT  /admin/config      # Update config
-```
-
-## ⚙️ Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama endpoint URL |
-| `OLLAMA_MODEL` | `llama3.1:8b` | Default model target |
-| `MAX_TOKENS` | `1024` | Max response tokens |
-| `TEMPERATURE` | `0.7` | Sampling temperature |
-| `ADMIN_USERNAME` | `admin` | Admin login |
-| `ADMIN_PASSWORD` | `professortux` | Admin password |
-
-See `.env.example` for all options.
-
-## 🐳 Docker
+After setup:
 
 ```bash
-docker build -t professor-tux .
-docker run -p 8000:8000 \
-  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
-  -e OLLAMA_MODEL=llama3.1:8b \
-  professor-tux
+source .venv/bin/activate
+python run.py
 ```
 
-## 🤝 Contributing
+Or without activating:
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open a Pull Request
+```bash
+.venv/bin/python run.py
+```
 
-## 📄 License
+## Access points
 
-MIT License — see [LICENSE](LICENSE) for details.
+- Student UI: `http://localhost:8000/`
+- Admin UI: `http://localhost:8000/admin`
+- Product docs: `http://localhost:8000/docs`
+- API docs: `http://localhost:8000/api/docs`
+- ReDoc: `http://localhost:8000/api/redoc`
 
-## 🙏 Acknowledgments
+Default admin credentials:
 
-- Built with [FastAPI](https://fastapi.tiangolo.com) and [Ollama](https://ollama.com)
-- UI inspired by terminal aesthetics and cyberpunk themes
-- RAG powered by [ChromaDB](https://www.trychroma.com) and [Sentence Transformers](https://www.sbert.net)
+```text
+username: admin
+password: professortux
+```
 
----
+Change them in `.env` before using this outside a local machine.
 
-<p align="center">Made with 💻 by cybersecurity educators, for cybersecurity learners</p>
+## First-time admin flow
+
+1. Open `/admin`.
+2. Confirm the Ollama API URL.
+3. Enter a model name and click `Run`.
+4. Choose the default student mode.
+5. Upload lecture files if you want Guided mode grounded in course material.
+6. Open `/` and test both Guided and Recall behavior.
+
+## Built-in modes
+
+Current repo modes are loaded from `app/modes/`:
+
+- `guided`
+- `recall`
+- `guided_wrong`
+- `recall_wrong`
+
+Modes are markdown files with frontmatter plus a prompt body. Add or edit files under `app/modes/`, then reload modes from admin or restart the server.
+
+## Lecture uploads and retrieval
+
+Supported upload types:
+
+- `.pdf`
+- `.pptx`
+- `.ppt`
+- `.txt`
+- `.md`
+
+Upload flow:
+
+1. file is saved under `data/uploads`
+2. text is extracted
+3. content is chunked and embedded
+4. embeddings are stored in `data/chromadb`
+
+Notes:
+
+- Guided mode can prefetch lecture context before generation.
+- Recall mode intentionally does not inject uploaded lecture context.
+
+## Important files
+
+```text
+app/main.py             FastAPI routes and runtime behavior
+app/professor.py        prompt construction and generation wrapper
+app/llm_backends.py     Ollama-compatible backend adapter
+app/rag.py              lecture ingestion and retrieval
+app/modes/              mode definitions
+app/static/index.html   student UI
+app/static/admin.html   admin UI
+app/static/docs.html    in-app documentation page
+run.py                  server entry point
+setup.sh                local bootstrap script
+```
+
+## Environment variables
+
+Core variables from `.env.example`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HOST` | `0.0.0.0` | bind host |
+| `PORT` | `8000` | bind port |
+| `ADMIN_USERNAME` | `admin` | admin login |
+| `ADMIN_PASSWORD` | `professortux` | admin login |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama-compatible backend |
+| `OLLAMA_MODEL` | `qwen3.5:4b` | default model target |
+| `OLLAMA_KEEP_ALIVE` | `5m` | Ollama keep-alive |
+| `MAX_TOKENS` | `1024` | response cap |
+| `TEMPERATURE` | `0.7` | generation temperature |
+| `MODEL_REQUEST_TIMEOUT` | `60` | backend timeout |
+| `CHAT_LOG_DIR` | `./data/logs` | log path |
+
+Additional retrieval variables are handled in `app/rag.py`.
+
+## Terminal client
+
+There is also a CLI client:
+
+```bash
+.venv/bin/python client.py
+```
+
+Use it when you want to hit the backend without the browser UI.
+
+## Troubleshooting
+
+### Student UI says no model is ready
+
+- make sure `ollama serve` is running
+- open `/admin`
+- verify the Ollama URL
+- switch to a valid model
+
+### Uploads seem ignored
+
+- test in `Guided Learning`, not Recall
+- confirm the file appears in admin
+- make sure lecture context is enabled
+
+### Old chat breaks after server restart
+
+Sessions are in memory. Refresh the page so the frontend creates a fresh session.
+
+### Need deeper setup details
+
+Run the app and open:
+
+- `/docs` for the full operator guide
+- `/api/docs` for the API schema

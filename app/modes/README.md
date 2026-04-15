@@ -37,7 +37,7 @@ pip install -r requirements.txt
 
 # 2. Start Ollama and pull a model
 ollama serve
-ollama pull llama3.1:8b
+ollama pull qwen3.5:4b
 
 # 3. Configure
 cp .env.example .env
@@ -181,7 +181,7 @@ Changes made in admin are immediately reflected for new student sessions.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server URL (local or remote) |
-| `OLLAMA_MODEL` | `llama3.1:8b` | Default model target |
+| `OLLAMA_MODEL` | `qwen3.5:4b` | Default model target |
 | `MAX_TOKENS` | `1024` | Max response tokens |
 | `TEMPERATURE` | `0.7` | Sampling temperature |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model |

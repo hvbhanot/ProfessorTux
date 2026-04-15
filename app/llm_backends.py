@@ -173,7 +173,7 @@ class OllamaBackend(ModelBackend):
         self._default_model = (
             default_model
             if default_model is not None
-            else os.getenv("OLLAMA_MODEL", "llama3.1:8b").strip()
+            else os.getenv("OLLAMA_MODEL", "qwen3.5:4b").strip()
         )
         self._keep_alive = os.getenv("OLLAMA_KEEP_ALIVE", "5m").strip() or "5m"
         self._default_description = default_description

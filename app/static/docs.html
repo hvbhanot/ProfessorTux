@@ -622,8 +622,8 @@ tr:last-child td{
         <div class="steps">
           <div class="step">
             <strong>1. Clone the repository</strong>
-            <div class="code-block"><pre><code>git clone &lt;your-repo-url&gt;
-cd ProfessorTux_Git</code></pre></div>
+            <div class="code-block"><pre><code>git clone https://github.com/hvbhanot/ProfessorTux.git
+cd ProfessorTux</code></pre></div>
           </div>
           <div class="step">
             <strong>2. Create a virtual environment</strong>
@@ -644,7 +644,7 @@ source .venv/bin/activate</code></pre></div>
           <div class="step">
             <strong>5. Start Ollama and make sure a model exists</strong>
             <div class="code-block"><pre><code>ollama serve
-ollama pull llama3.1:8b</code></pre></div>
+ollama pull qwen3.5:4b</code></pre></div>
           </div>
           <div class="step">
             <strong>6. Run Professor Tux</strong>
@@ -659,6 +659,10 @@ ollama pull llama3.1:8b</code></pre></div>
               <li>Product docs: <code>http://localhost:8000/docs</code></li>
             </ul>
           </div>
+        </div>
+        <div class="info-box">
+          <strong>Repository</strong>
+          Source code lives at <a href="https://github.com/hvbhanot/ProfessorTux" target="_blank" rel="noopener">github.com/hvbhanot/ProfessorTux</a>.
         </div>
       </section>
 
@@ -698,10 +702,10 @@ ollama pull llama3.1:8b</code></pre></div>
         <p>Local Ollama is the simplest and most reliable path.</p>
         <h3>Recommended local flow</h3>
         <div class="code-block"><pre><code>ollama serve
-ollama pull llama3.1:8b</code></pre></div>
+ollama pull qwen3.5:4b</code></pre></div>
         <p>Then set these values in <code>.env</code> if needed:</p>
         <div class="code-block"><pre><code>OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=llama3.1:8b
+OLLAMA_MODEL=qwen3.5:4b
 OLLAMA_KEEP_ALIVE=5m</code></pre></div>
         <h3>Models</h3>
         <div class="table-wrap">
@@ -710,8 +714,8 @@ OLLAMA_KEEP_ALIVE=5m</code></pre></div>
               <tr><th>Model</th><th>Use Case</th><th>Command</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>llama3.1:8b</code></td><td>Balanced default</td><td><code>ollama pull llama3.1:8b</code></td></tr>
-              <tr><td><code>qwen3.5:4b</code></td><td>Smaller local model</td><td><code>ollama pull qwen3.5:4b</code></td></tr>
+              <tr><td><code>qwen3.5:4b</code></td><td>Balanced default</td><td><code>ollama pull qwen3.5:4b</code></td></tr>
+              <tr><td><code>llama3.1:8b</code></td><td>Larger general-purpose model</td><td><code>ollama pull llama3.1:8b</code></td></tr>
               <tr><td><code>qwen2.5:7b</code></td><td>Local reasoning</td><td><code>ollama pull qwen2.5:7b</code></td></tr>
               <tr><td><code>mistral:7b</code></td><td>Lighter guided explanation</td><td><code>ollama pull mistral:7b</code></td></tr>
             </tbody>
@@ -894,7 +898,7 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
               <tr><td><code>ADMIN_USERNAME</code></td><td><code>admin</code></td><td>Admin login username</td></tr>
               <tr><td><code>ADMIN_PASSWORD</code></td><td><code>professortux</code></td><td>Admin login password</td></tr>
               <tr><td><code>OLLAMA_BASE_URL</code></td><td><code>http://127.0.0.1:11434</code></td><td>Ollama-compatible backend URL</td></tr>
-              <tr><td><code>OLLAMA_MODEL</code></td><td><code>llama3.1:8b</code></td><td>Default model target</td></tr>
+              <tr><td><code>OLLAMA_MODEL</code></td><td><code>qwen3.5:4b</code></td><td>Default model target</td></tr>
               <tr><td><code>OLLAMA_KEEP_ALIVE</code></td><td><code>5m</code></td><td>Keep-alive for Ollama chat sessions</td></tr>
               <tr><td><code>MAX_TOKENS</code></td><td><code>1024</code></td><td>Max response tokens</td></tr>
               <tr><td><code>TEMPERATURE</code></td><td><code>0.7</code></td><td>Sampling temperature</td></tr>
