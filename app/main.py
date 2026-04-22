@@ -574,36 +574,6 @@ def _run_lecture_search(query: str, session: dict) -> tuple[str, list[str]]:
     return json.dumps(payload, ensure_ascii=False), sources_used
 
 
-def _prefetch_lecture_context(student_message: str, session: dict) -> tuple[str, list[str]]:
-    if not session.get("use_lectures", True):
-        return "", []
-    if not knowledge_base.is_loaded:
-        return "", []
-    stats = knowledge_base.get_stats()
-    if stats.get("total_documents", 0) <= 0:
-        return "", []
-
-    search_query = student_message.strip()
-    if session.get("topic"):
-        search_query = f"{session['topic']}: {search_query}"
-
-    contexts = knowledge_base.search(
-        query=search_query,
-        top_k=3,
-        course_filter=session.get("course_filter"),
-    )
-    lecture_context = knowledge_base.format_context_for_prompt(contexts, min_rel=0.3)
-    if not lecture_context:
-        return "", []
-
-    relevant = [c for c in contexts if c.relevance_score >= 0.3]
-    sources_used = list(dict.fromkeys(
-        f"{c.source_filename} (slide {c.page_or_slide})"
-        for c in relevant
-    ))
-    return lecture_context, sources_used
-
-
 def _handle_tool_call(call: dict, session: dict) -> tuple[Optional[dict], list[str]]:
     function = call.get("function") or {}
     name = function.get("name")
@@ -646,9 +616,8 @@ def _should_apply_wrongness(mode_id: str) -> bool:
 
 
 def _mode_uses_lecture_support(mode_id: str, apply_wrongness: bool) -> bool:
-    # Recall-like modes stay minimal. Guided wrong modes still use lecture
-    # support on normal turns, but wrong turns stay ungrounded so the model
-    # can drift slightly off course.
+    # Recall-like modes stay minimal — no lecture tool, no citations.
+    # Wrong turns stay ungrounded so the model can drift slightly off course.
     if _is_recall_like_mode(mode_id):
         return False
     if apply_wrongness:
@@ -665,19 +634,16 @@ def _generate_response_with_tools(
 ) -> tuple[str, list[str], str]:
     use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
     tools = _lecture_tools_for_session(session) if use_lectures else []
-    lecture_context, prefetched_sources = (
-        _prefetch_lecture_context(student_message, session) if use_lectures else ("", [])
-    )
     messages = professor.build_messages(
         student_message=student_message,
         mode_id=active_mode,
         topic=session["topic"],
         history=session["history"],
-        lecture_context=lecture_context,
+        lecture_context="",
         apply_wrongness=apply_wrongness,
     )
     system_prompt = messages[0]["content"] if messages else ""
-    sources_used: list[str] = list(prefetched_sources)
+    sources_used: list[str] = []
     last_content = ""
 
     if not tools:
@@ -686,7 +652,7 @@ def _generate_response_with_tools(
             mode_id=active_mode,
             topic=session["topic"],
             history=session["history"],
-            lecture_context=lecture_context,
+            lecture_context="",
             apply_wrongness=apply_wrongness,
         )
         if response_text.strip():
@@ -831,17 +797,13 @@ async def chat_stream(req: ChatRequest, request: Request):
             else:
                 use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
                 tools = _lecture_tools_for_session(session) if use_lectures else []
-                lecture_context, prefetched_sources = (
-                    _prefetch_lecture_context(req.message, session) if use_lectures else ("", [])
-                )
-                sources_used.extend(prefetched_sources)
                 if not tools:
                     messages = professor.build_messages(
                         student_message=req.message,
                         mode_id=active_mode,
                         topic=session["topic"],
                         history=session["history"],
-                        lecture_context=lecture_context,
+                        lecture_context="",
                         apply_wrongness=apply_wrongness,
                     )
                     system_prompt = messages[0]["content"] if messages else ""
@@ -850,7 +812,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         mode_id=active_mode,
                         topic=session["topic"],
                         history=session["history"],
-                        lecture_context=lecture_context,
+                        lecture_context="",
                         apply_wrongness=apply_wrongness,
                     ):
                         if not token:
@@ -863,7 +825,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         mode_id=active_mode,
                         topic=session["topic"],
                         history=session["history"],
-                        lecture_context=lecture_context,
+                        lecture_context="",
                         apply_wrongness=apply_wrongness,
                     )
                     system_prompt = messages[0]["content"] if messages else ""
@@ -972,12 +934,18 @@ async def list_models():
 
 @app.get("/admin/models/status", tags=["Admin"])
 async def get_model_status(token: str = Depends(verify_admin)):
+    active_model = professor.active_model if professor else ""
+    model_loaded = professor.is_loaded if professor else False
+    tool_support: Optional[bool] = None
+    if professor and active_model and model_loaded:
+        tool_support = professor.probe_tool_support(active_model)
     return {
         "operation": _get_model_operation(),
-        "active_model": professor.active_model if professor else "",
-        "model_loaded": professor.is_loaded if professor else False,
+        "active_model": active_model,
+        "model_loaded": model_loaded,
         "base_url": _effective_local_base_url(),
         "base_url_source": _local_base_url_source(),
+        "tool_support": tool_support,
     }
 
 

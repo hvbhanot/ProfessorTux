@@ -68,6 +68,23 @@ class BackendError(RuntimeError):
     """Raised when an upstream model backend call fails."""
 
 
+class BackendToolsUnsupported(BackendError):
+    """Raised when the active model rejects a request because it cannot use tools."""
+
+
+def _read_error_payload(response: requests.Response) -> str:
+    try:
+        data = response.json()
+        if isinstance(data, dict) and data.get("error"):
+            return str(data["error"])
+    except (ValueError, requests.RequestException):
+        pass
+    try:
+        return (response.text or "").strip()
+    except Exception:
+        return ""
+
+
 @dataclass(frozen=True)
 class ModelDescriptor:
     provider: str
@@ -194,6 +211,15 @@ class OllamaBackend(ModelBackend):
 
     def _headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json"}
+
+    def _raise_http_error(self, response: requests.Response, context: str):
+        body = _read_error_payload(response)
+        if response.status_code == 400 and "does not support tools" in body.lower():
+            raise BackendToolsUnsupported(body or "Model does not support tools")
+        detail = f" — {body}" if body else ""
+        raise BackendError(
+            f"{self.provider_label} {context} failed: HTTP {response.status_code}{detail}"
+        )
 
     def is_local_endpoint(self) -> bool:
         parsed = urlparse(self._base_url)
@@ -464,10 +490,11 @@ class OllamaBackend(ModelBackend):
             },
         }
         response = self._post("/api/chat", payload=payload)
+        if not response.ok:
+            self._raise_http_error(response, "chat")
         try:
-            response.raise_for_status()
             data = response.json()
-        except (requests.RequestException, ValueError) as exc:
+        except ValueError as exc:
             raise BackendError(f"Invalid {self.provider_label} response: {exc}") from exc
         if data.get("error"):
             raise BackendError(str(data["error"]))
@@ -499,10 +526,8 @@ class OllamaBackend(ModelBackend):
             },
         }
         with self._post("/api/chat", payload=payload, stream=True) as response:
-            try:
-                response.raise_for_status()
-            except requests.RequestException as exc:
-                raise BackendError(f"{self.provider_label} stream failed: {exc}") from exc
+            if not response.ok:
+                self._raise_http_error(response, "stream")
             for line in response.iter_lines(decode_unicode=True):
                 if not line:
                     continue

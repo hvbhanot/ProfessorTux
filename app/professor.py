@@ -12,6 +12,7 @@ from typing import Optional
 
 from app.llm_backends import (
     BackendError,
+    BackendToolsUnsupported,
     ModelBackend,
     OllamaBackend,
 )
@@ -105,6 +106,7 @@ class ProfessorTux:
 
         self._active_provider: str = ""
         self._active_model: str = ""
+        self._tool_support: dict[str, bool] = {}
         self._select_default_target()
 
     @property
@@ -200,6 +202,51 @@ class ProfessorTux:
 
     def get_backend(self, provider: str) -> Optional[ModelBackend]:
         return self._backends.get(provider)
+
+    def tool_support_cached(self, model: str) -> Optional[bool]:
+        return self._tool_support.get(model)
+
+    def probe_tool_support(self, model: str) -> Optional[bool]:
+        """
+        Return True/False if the model supports tool calling, or None on unrelated
+        backend errors. Results are cached so repeated calls are cheap.
+        """
+        if not model:
+            return None
+        cached = self._tool_support.get(model)
+        if cached is not None:
+            return cached
+
+        backend = self._backends.get(self._active_provider) if self._active_provider else None
+        if backend is None:
+            backend = next(iter(self._backends.values()), None)
+        if backend is None:
+            return None
+
+        probe_tools = [{
+            "type": "function",
+            "function": {
+                "name": "probe",
+                "description": "capability probe",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }]
+        try:
+            backend.chat(
+                model=model,
+                messages=[{"role": "user", "content": "ping"}],
+                tools=probe_tools,
+                max_tokens=1,
+                temperature=0.0,
+            )
+            self._tool_support[model] = True
+            return True
+        except BackendToolsUnsupported:
+            self._tool_support[model] = False
+            return False
+        except BackendError as exc:
+            logger.warning("Tool-support probe failed for %s: %s", model, exc)
+            return None
 
     @property
     def max_tokens(self) -> int:
@@ -367,14 +414,36 @@ class ProfessorTux:
         apply_wrongness: bool = False,
     ) -> dict:
         backend = self._get_active_backend()
+        model = self._active_model
+        effective_tools = None if self._tool_support.get(model) is False else tools
+        temperature = self._temperature_for_mode(mode_id, apply_wrongness)
         try:
             response = backend.chat(
-                model=self._active_model,
+                model=model,
                 messages=messages,
-                tools=tools,
+                tools=effective_tools,
                 max_tokens=self._max_tokens,
-                temperature=self._temperature_for_mode(mode_id, apply_wrongness),
+                temperature=temperature,
             )
+            if effective_tools:
+                self._tool_support[model] = True
+        except BackendToolsUnsupported as e:
+            if effective_tools is None:
+                logger.error("LLM chat failed: %s", e)
+                raise
+            logger.info("Model %s does not support tools; retrying without tools", model)
+            self._tool_support[model] = False
+            try:
+                response = backend.chat(
+                    model=model,
+                    messages=messages,
+                    tools=None,
+                    max_tokens=self._max_tokens,
+                    temperature=temperature,
+                )
+            except BackendError as inner:
+                logger.error("LLM chat failed: %s", inner)
+                raise
         except BackendError as e:
             logger.error("LLM chat failed: %s", e)
             raise
@@ -400,31 +469,51 @@ class ProfessorTux:
         apply_wrongness: bool = False,
     ):
         backend = self._get_active_backend()
-        try:
-            stream = backend.chat_stream(
-                model=self._active_model,
-                messages=messages,
-                tools=tools,
-                max_tokens=self._max_tokens,
-                temperature=self._temperature_for_mode(mode_id, apply_wrongness),
-            )
-            for chunk in stream:
-                message = chunk.get("message") or {}
-                content = _strip_thinking(message.get("content", ""), trim=False)
-                normalized = {
-                    "role": message.get("role", "assistant"),
-                    "content": content,
-                    "done": bool(chunk.get("done")),
-                    "done_reason": chunk.get("done_reason"),
-                }
-                if message.get("tool_calls"):
-                    normalized["tool_calls"] = message["tool_calls"]
-                if message.get("thinking"):
-                    normalized["thinking"] = message["thinking"]
-                yield normalized
-        except BackendError as e:
-            logger.error("LLM streaming chat failed: %s", e)
-            raise
+        model = self._active_model
+        temperature = self._temperature_for_mode(mode_id, apply_wrongness)
+        effective_tools = None if self._tool_support.get(model) is False else tools
+
+        attempts: list[list[dict] | None] = [effective_tools]
+        if effective_tools is not None:
+            attempts.append(None)
+
+        yielded = False
+        for attempt_tools in attempts:
+            try:
+                for chunk in backend.chat_stream(
+                    model=model,
+                    messages=messages,
+                    tools=attempt_tools,
+                    max_tokens=self._max_tokens,
+                    temperature=temperature,
+                ):
+                    yielded = True
+                    message = chunk.get("message") or {}
+                    content = _strip_thinking(message.get("content", ""), trim=False)
+                    normalized = {
+                        "role": message.get("role", "assistant"),
+                        "content": content,
+                        "done": bool(chunk.get("done")),
+                        "done_reason": chunk.get("done_reason"),
+                    }
+                    if message.get("tool_calls"):
+                        normalized["tool_calls"] = message["tool_calls"]
+                    if message.get("thinking"):
+                        normalized["thinking"] = message["thinking"]
+                    yield normalized
+                if attempt_tools:
+                    self._tool_support[model] = True
+                return
+            except BackendToolsUnsupported as e:
+                if yielded or attempt_tools is None:
+                    logger.error("LLM streaming chat failed: %s", e)
+                    raise
+                logger.info("Model %s does not support tools; retrying without tools", model)
+                self._tool_support[model] = False
+                continue
+            except BackendError as e:
+                logger.error("LLM streaming chat failed: %s", e)
+                raise
 
     @staticmethod
     def _split_mode_prompt(prompt: str) -> tuple[str, list[dict]]:

@@ -1198,6 +1198,10 @@ body::before{
         </div>
         <input class="file-input" id="fileInput" type="file" multiple accept=".pdf,.pptx,.ppt,.txt,.md" onchange="handleFiles(event)">
         <div class="upload-progress" id="uploadProgress"><div class="upload-progress-bar" id="uploadProgressBar"></div></div>
+        <details class="cloud-note" style="margin-bottom:16px">
+          <summary class="cloud-note-title">Tip: lecture search needs a tool-capable model</summary>
+          Lecture retrieval runs as a <code>search_lectures</code> tool call — the model decides when to search and cites the slides it used. Small local models that don't support tools (e.g., <code>gemma3n</code>) will answer without any lecture grounding. For reliable citations across large decks, use a tool-capable model: locally <code>qwen3.5:4b</code>, or cloud tiers like <code>gpt-oss:120b-cloud</code>, <code>qwen3.5:397b-cloud</code>, <code>deepseek-v3.1:671b-cloud</code>. Recall mode never surfaces slides by design.
+        </details>
         <div class="table-shell">
           <table class="file-table"><thead><tr><th>Filename</th><th>Course</th><th>Pages</th><th>Chunks</th><th>Uploaded</th><th></th></tr></thead><tbody id="fileTableBody"><tr><td colspan="6" class="empty-state">No lecture slides uploaded yet</td></tr></tbody></table>
         </div>
@@ -1237,6 +1241,24 @@ body::before{
       <button class="reload-btn" onclick="closeLogModal()">✕ Close</button>
     </div>
     <div id="logModalContent" style="font-size:12px;line-height:1.8"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="toolSupportModal">
+  <div class="modal-box" style="max-width:540px">
+    <div class="modal-head">
+      <div class="card-title">⚠️ Lecture search unavailable</div>
+      <button class="reload-btn" onclick="closeToolSupportModal()">✕ Close</button>
+    </div>
+    <div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">
+      The active model <code id="toolSupportModel" style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)"></code> does not support tool calling, so it cannot search your uploaded lecture slides. Students will still get answers, but they won't be grounded in your course material and no slide citations will appear.
+      <div style="margin-top:14px">To enable lecture search, switch to a tool-capable model:</div>
+      <ul style="margin:8px 0 14px 18px;padding:0">
+        <li>Local: <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">qwen3.5:4b</code></li>
+        <li>Cloud: <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">gpt-oss:120b-cloud</code>, <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">qwen3.5:397b-cloud</code>, <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">deepseek-v3.1:671b-cloud</code></li>
+      </ul>
+      <div style="text-align:right"><button class="save-btn" onclick="closeToolSupportModal()" style="margin:0">Got it</button></div>
+    </div>
   </div>
 </div>
 
@@ -1293,6 +1315,18 @@ function syncModelControlsFromStatus(model) {
   if(model) document.getElementById('cfgModelName').value = model;
 }
 
+var toolSupportWarned = new Set();
+
+function openToolSupportModal(model) {
+  var el = document.getElementById('toolSupportModel');
+  if(el) el.textContent = model || '—';
+  document.getElementById('toolSupportModal').classList.add('open');
+}
+
+function closeToolSupportModal() {
+  document.getElementById('toolSupportModal').classList.remove('open');
+}
+
 async function loadModelStatus() {
   try {
     var resp = await fetch(API + '/admin/models/status', {headers:authH()});
@@ -1301,6 +1335,10 @@ async function loadModelStatus() {
     updateLocalUrlUI(d.base_url || '', d.base_url_source || '');
     syncModelControlsFromStatus(d.active_model || document.getElementById('cfgModelName').value);
     updateModelOperationUI(d.operation || {});
+    if(d.active_model && d.tool_support === false && !toolSupportWarned.has(d.active_model)) {
+      toolSupportWarned.add(d.active_model);
+      openToolSupportModal(d.active_model);
+    }
   } catch(e) {
     console.error('Failed to load model status', e);
   }
