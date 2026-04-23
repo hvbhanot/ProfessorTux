@@ -729,7 +729,7 @@ OLLAMA_KEEP_ALIVE=5m</code></pre></div>
 
       <section class="section" id="ollama-cloud">
         <h2>Ollama Cloud Setup</h2>
-        <p>Professor Tux does not talk to Ollama Cloud directly. It still talks to an Ollama-compatible local endpoint. The local daemon handles cloud forwarding after you sign in.</p>
+        <p>For chat, Professor Tux talks to an Ollama-compatible local endpoint. The local daemon handles cloud model forwarding after you sign in. For CTF live web search, Professor Tux calls Ollama's authenticated web-search API directly with a saved admin API key or <code>OLLAMA_API_KEY</code>.</p>
         <div class="steps">
           <div class="step">
             <strong>1. Start your local Ollama daemon</strong>
@@ -747,10 +747,16 @@ OLLAMA_KEEP_ALIVE=5m</code></pre></div>
             <strong>4. In the admin panel, run a cloud model name</strong>
             <div class="code-block"><pre><code>gpt-oss:120b-cloud</code></pre></div>
           </div>
+          <div class="step">
+            <strong>5. Optional: enable CTF live web search</strong>
+            <p>Create an Ollama API key, then paste it into <em>Admin → Runtime → CTF Web Search</em>. You can also add it to <code>.env</code> and restart Professor Tux.</p>
+            <div class="code-block"><pre><code>OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_WEB_SEARCH_BASE_URL=https://ollama.com</code></pre></div>
+          </div>
         </div>
         <div class="warning">
           <strong>Common misunderstanding</strong>
-          Do not point <code>OLLAMA_BASE_URL</code> at an ollama.com web URL. It should still be the local or remote Ollama-compatible daemon endpoint that exposes <code>/api/chat</code>.
+          Do not point <code>OLLAMA_BASE_URL</code> at an ollama.com web URL. It should still be the local or remote Ollama-compatible daemon endpoint that exposes <code>/api/chat</code>. Web search uses <code>OLLAMA_WEB_SEARCH_BASE_URL</code> separately.
         </div>
       </section>
 
@@ -780,6 +786,7 @@ password: professortux</code></pre></div>
             <tbody>
               <tr><td>Ollama API URL</td><td>Changes the runtime backend endpoint</td><td>Persisted to <code>./data/admin_runtime.json</code></td></tr>
               <tr><td>Model Name</td><td>Switches to a model on that endpoint</td><td>Local endpoints can auto-pull missing models</td></tr>
+              <tr><td>CTF Web Search</td><td>Stores the Ollama web-search API key and API URL</td><td>Persisted to <code>./data/admin_runtime.json</code>; key is not echoed back to the UI</td></tr>
               <tr><td>Student Mode</td><td>Sets the default mode for new student sessions</td><td>Applied to new sessions</td></tr>
               <tr><td>Max Tokens</td><td>Sets response length limit</td><td>Persisted to <code>./data/admin_runtime.json</code></td></tr>
               <tr><td>Lecture context toggle</td><td>Enables or disables lecture retrieval</td><td>Student page reads this via <code>/admin/config/public</code></td></tr>
@@ -788,7 +795,7 @@ password: professortux</code></pre></div>
         </div>
         <div class="warning">
           <strong>Persistence detail</strong>
-          The Ollama URL and max tokens are persisted. Other admin defaults such as mode, topic, course filter, and lecture-context toggle are runtime config in memory and may reset on server restart unless you add persistence for them.
+          The Ollama URL, CTF web-search settings, and max tokens are persisted. Other admin defaults such as mode, topic, course filter, and lecture-context toggle are runtime config in memory and may reset on server restart unless you add persistence for them.
         </div>
       </section>
 
@@ -900,6 +907,8 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
               <tr><td><code>OLLAMA_BASE_URL</code></td><td><code>http://127.0.0.1:11434</code></td><td>Ollama-compatible backend URL</td></tr>
               <tr><td><code>OLLAMA_MODEL</code></td><td><code>qwen3.5:4b</code></td><td>Default model target</td></tr>
               <tr><td><code>OLLAMA_KEEP_ALIVE</code></td><td><code>5m</code></td><td>Keep-alive for Ollama chat sessions</td></tr>
+              <tr><td><code>OLLAMA_API_KEY</code></td><td>empty</td><td>Enables Ollama cloud web search for CTF Mode; can also be saved from admin</td></tr>
+              <tr><td><code>OLLAMA_WEB_SEARCH_BASE_URL</code></td><td><code>https://ollama.com</code></td><td>Ollama web-search API base URL</td></tr>
               <tr><td><code>MAX_TOKENS</code></td><td><code>1024</code></td><td>Max response tokens</td></tr>
               <tr><td><code>TEMPERATURE</code></td><td><code>0.7</code></td><td>Sampling temperature</td></tr>
               <tr><td><code>MODEL_REQUEST_TIMEOUT</code></td><td><code>60</code></td><td>Backend request timeout in seconds</td></tr>
@@ -926,7 +935,7 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
               <tr><td>Uploaded files</td><td><code>./data/uploads</code></td><td>Yes</td></tr>
               <tr><td>Lecture embeddings / vector store</td><td><code>./data/chromadb</code></td><td>Yes</td></tr>
               <tr><td>Chat logs</td><td><code>./data/logs</code></td><td>Yes</td></tr>
-              <tr><td>Ollama URL + max tokens runtime settings</td><td><code>./data/admin_runtime.json</code></td><td>Yes</td></tr>
+              <tr><td>Ollama URL, CTF web-search key/API URL, and max tokens runtime settings</td><td><code>./data/admin_runtime.json</code></td><td>Yes</td></tr>
               <tr><td>Student sessions</td><td>In memory</td><td>No</td></tr>
               <tr><td>Admin auth tokens</td><td>In memory</td><td>No</td></tr>
               <tr><td>Default topic / course / mode / lecture toggle</td><td>Runtime memory</td><td>Not fully persisted</td></tr>
@@ -1005,7 +1014,7 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         <p>Guided mode now prefetches lecture context before generation, so uploads should still work in cloud-backed generation. If they do not, check that you are in Guided mode, lecture context is enabled, and the uploaded content matches the question.</p>
 
         <h3>7. Changing admin settings does not survive restart</h3>
-        <p>Only some runtime settings are persisted right now. The Ollama URL and max tokens are saved; other admin defaults are still runtime-only unless you add persistence for them.</p>
+        <p>Only some runtime settings are persisted right now. The Ollama URL, CTF web-search settings, and max tokens are saved; other admin defaults are still runtime-only unless you add persistence for them.</p>
       </section>
     </main>
   </div>

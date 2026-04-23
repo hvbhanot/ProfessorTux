@@ -24,6 +24,81 @@ logger = logging.getLogger("professor_tux.backends")
 
 REQUEST_TIMEOUT = float(os.getenv("MODEL_REQUEST_TIMEOUT", "60"))
 
+_web_search_config_lock = threading.Lock()
+_web_search_api_key_override = ""
+_web_search_base_url_override = ""
+
+
+class WebSearchConfigurationError(RuntimeError):
+    """Raised when Ollama web search is not configured."""
+
+
+def ollama_web_search_configured() -> bool:
+    return bool(_effective_ollama_web_search_api_key())
+
+
+def ollama_web_search_base_url() -> str:
+    with _web_search_config_lock:
+        override = _web_search_base_url_override
+    return _normalize_ollama_base_url(
+        override or os.getenv("OLLAMA_WEB_SEARCH_BASE_URL", "https://ollama.com"),
+        "https://ollama.com",
+    )
+
+
+def configure_ollama_web_search(*, api_key: str = "", base_url: str = ""):
+    """Set runtime web-search overrides loaded from admin settings."""
+    global _web_search_api_key_override, _web_search_base_url_override
+    with _web_search_config_lock:
+        _web_search_api_key_override = (api_key or "").strip()
+        _web_search_base_url_override = (base_url or "").strip()
+
+
+def _effective_ollama_web_search_api_key() -> str:
+    with _web_search_config_lock:
+        override = _web_search_api_key_override
+    return override or os.getenv("OLLAMA_API_KEY", "").strip()
+
+
+def ollama_web_search(query: str, max_results: int = 5) -> list[dict]:
+    """Route web search through Ollama's authenticated cloud web-search API.
+
+    Chat still uses the configured Ollama-compatible daemon. Web search is a
+    separate Ollama API at https://ollama.com/api/web_search and requires a
+    saved admin API key or OLLAMA_API_KEY.
+    """
+    api_key = _effective_ollama_web_search_api_key()
+    if not api_key:
+        raise WebSearchConfigurationError(
+            "Ollama web search requires an Ollama API key. Save one in the admin page or set OLLAMA_API_KEY."
+        )
+
+    body: dict = {"query": query}
+    if isinstance(max_results, int) and 1 <= max_results <= 10:
+        body["max_results"] = max_results
+    endpoint = ollama_web_search_base_url() + "/api/web_search"
+    resp = requests.post(
+        endpoint,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=body,
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    data = resp.json() or {}
+    results = data.get("results") or []
+    return [
+        {
+            "title": r.get("title") or "",
+            "url": r.get("url") or "",
+            "content": r.get("content") or "",
+        }
+        for r in results
+        if isinstance(r, dict)
+    ]
+
 
 def _normalize_ollama_base_url(value: str, default: str) -> str:
     base_url = (value or default).strip().rstrip("/")

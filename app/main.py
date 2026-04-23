@@ -3,6 +3,7 @@
 import os
 import json
 import re
+import shlex
 import time
 import random
 import shutil
@@ -17,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from contextlib import asynccontextmanager
 from typing import Optional
+import requests as _requests
 from pydantic import BaseModel
 
 from app.models import (
@@ -32,7 +34,15 @@ from app.sessions import SessionManager
 from app.rag import LectureKnowledgeBase, UPLOAD_DIR
 from app.mode_loader import ModeLoader
 from app.chat_logger import ChatLogger, ChatLogEntry
-from app.llm_backends import BackendError, OllamaBackend
+from app.llm_backends import (
+    BackendError,
+    OllamaBackend,
+    WebSearchConfigurationError,
+    configure_ollama_web_search,
+    ollama_web_search,
+    ollama_web_search_base_url,
+    ollama_web_search_configured,
+)
 
 LOG_FILE_DIR = Path(os.getenv("CHAT_LOG_DIR", "./data/logs"))
 RUNTIME_SETTINGS_PATH = Path("./data/admin_runtime.json")
@@ -68,6 +78,8 @@ model_operation: dict = {
 runtime_settings_lock = threading.Lock()
 runtime_settings: dict = {
     "ollama_base_url": "",
+    "ollama_api_key": "",
+    "ollama_web_search_base_url": "",
     "max_tokens": None,
 }
 
@@ -103,17 +115,23 @@ def _load_runtime_settings():
 
     with runtime_settings_lock:
         runtime_settings["ollama_base_url"] = str(data.get("ollama_base_url", "") or "").strip()
+        runtime_settings["ollama_api_key"] = str(data.get("ollama_api_key", "") or "").strip()
+        runtime_settings["ollama_web_search_base_url"] = str(data.get("ollama_web_search_base_url", "") or "").strip()
         saved_max_tokens = data.get("max_tokens")
         try:
             runtime_settings["max_tokens"] = int(saved_max_tokens) if saved_max_tokens is not None else None
         except (TypeError, ValueError):
             runtime_settings["max_tokens"] = None
 
+    _sync_web_search_runtime_config()
+
 
 def _save_runtime_settings():
     with runtime_settings_lock:
         payload = {
             "ollama_base_url": runtime_settings.get("ollama_base_url", "").strip(),
+            "ollama_api_key": runtime_settings.get("ollama_api_key", "").strip(),
+            "ollama_web_search_base_url": runtime_settings.get("ollama_web_search_base_url", "").strip(),
             "max_tokens": runtime_settings.get("max_tokens"),
         }
 
@@ -127,6 +145,33 @@ def _effective_max_tokens() -> int:
     if isinstance(saved_max_tokens, int) and saved_max_tokens > 0:
         return saved_max_tokens
     return int(os.getenv("MAX_TOKENS", "1024"))
+
+
+def _sync_web_search_runtime_config():
+    with runtime_settings_lock:
+        api_key = runtime_settings.get("ollama_api_key", "").strip()
+        base_url = runtime_settings.get("ollama_web_search_base_url", "").strip()
+    configure_ollama_web_search(api_key=api_key, base_url=base_url)
+
+
+def _web_search_api_key_source() -> str:
+    with runtime_settings_lock:
+        ui_key = runtime_settings.get("ollama_api_key", "").strip()
+    if ui_key:
+        return "ui"
+    if os.getenv("OLLAMA_API_KEY", "").strip():
+        return "env"
+    return ""
+
+
+def _web_search_base_url_source() -> str:
+    with runtime_settings_lock:
+        ui_url = runtime_settings.get("ollama_web_search_base_url", "").strip()
+    if ui_url:
+        return "ui"
+    if os.getenv("OLLAMA_WEB_SEARCH_BASE_URL", "").strip():
+        return "env"
+    return "default"
 
 
 def _effective_local_base_url() -> str:
@@ -573,31 +618,190 @@ def _run_lecture_search(query: str, session: dict) -> tuple[str, list[str]]:
     return json.dumps(payload, ensure_ascii=False), sources_used
 
 
+def _web_search_tool_schema() -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Live web search. Use this for ANY question whose answer depends on current "
+                "or post-training information — news, today's date or events, recent releases, "
+                "CVEs, writeups, payloads, tool docs, leaderboards, prices. "
+                "You HAVE real-time web access via this tool; do NOT claim otherwise. "
+                "If unsure whether your training data is current enough, call this tool first."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "Focused search query."},
+                    "max_results": {
+                        "type": "integer",
+                        "description": "How many results to return (1-10, default 5).",
+                        "minimum": 1,
+                        "maximum": 10,
+                    },
+                },
+            },
+        },
+    }
+
+
+def _ctf_agent_command_tool_schema() -> dict:
+    return {
+        "type": "function",
+        "function": {
+            "name": "ctf_agent_command",
+            "description": (
+                "Build a shell command the student can run with their local CTF-Agent "
+                "(github.com/hvbhanot/CTF-Agent) to autonomously attempt a CTF challenge. "
+                "Call this whenever the student has a concrete challenge they want to hand to the agent."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["name", "category", "desc"],
+                "properties": {
+                    "name": {"type": "string", "description": "Short challenge name, e.g. 'robots'."},
+                    "category": {
+                        "type": "string",
+                        "description": "CTF category.",
+                        "enum": ["web", "crypto", "pwn", "forensics", "misc", "rev"],
+                    },
+                    "desc": {"type": "string", "description": "One-sentence description of the objective."},
+                    "url": {"type": "string", "description": "Target URL for web/network challenges. Optional."},
+                    "model": {
+                        "type": "string",
+                        "description": "Ollama model the agent should use.",
+                        "default": "qwen2.5:7b",
+                    },
+                    "verbose": {"type": "boolean", "description": "Enable verbose logging.", "default": False},
+                },
+            },
+        },
+    }
+
+
+def _run_web_search(query: str, max_results: int = 5) -> tuple[str, list[str]]:
+    base_url = ollama_web_search_base_url()
+    try:
+        results = ollama_web_search(query, max_results=max_results)
+    except WebSearchConfigurationError as exc:
+        logger.warning("Web search is not configured: %s", exc)
+        return json.dumps({
+            "query": query,
+            "results": [],
+            "message": "Web search is not configured. Save an Ollama API key in the admin page or set OLLAMA_API_KEY.",
+        }, ensure_ascii=False), []
+    except _requests.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if status in (401, 403):
+            logger.warning("Web search auth failed via %s: %s", base_url, exc)
+            return json.dumps({
+                "query": query,
+                "results": [],
+                "message": "Web search is not authorized. Check the saved web search key or OLLAMA_API_KEY.",
+            }, ensure_ascii=False), []
+        if status == 404:
+            logger.warning("Web search endpoint missing on %s: %s", base_url, exc)
+            return json.dumps({
+                "query": query,
+                "results": [],
+                "message": "The configured Ollama web-search endpoint was not found. Remove OLLAMA_WEB_SEARCH_BASE_URL or set it to https://ollama.com.",
+            }, ensure_ascii=False), []
+        logger.warning("Web search HTTP error: %s", exc)
+        return json.dumps({
+            "query": query,
+            "results": [],
+            "message": "Web search request failed. Try again or rephrase the query.",
+        }, ensure_ascii=False), []
+    except _requests.RequestException as exc:
+        logger.warning("Web search transport error: %s", exc)
+        return json.dumps({
+            "query": query,
+            "results": [],
+            "message": "Web search request failed. Try again or rephrase the query.",
+        }, ensure_ascii=False), []
+
+    compact = [
+        {"title": r["title"], "url": r["url"], "content": r["content"][:600]}
+        for r in results[:10]
+    ]
+    sources = [f"{r['title']} — {r['url']}" for r in compact if r.get("url")]
+    return json.dumps({"query": query, "results": compact}, ensure_ascii=False), sources
+
+
+def _run_ctf_agent_command(args: dict) -> tuple[str, list[str]]:
+    name = (args.get("name") or "").strip()
+    category = (args.get("category") or "").strip().lower()
+    desc = (args.get("desc") or "").strip()
+    url = (args.get("url") or "").strip()
+    model = (args.get("model") or "qwen2.5:7b").strip()
+    verbose = bool(args.get("verbose", False))
+
+    if not name or not category or not desc:
+        return json.dumps({"message": "Missing required field: name, category, and desc are required."}, ensure_ascii=False), []
+
+    parts = ["python", "-m", "ctf_agent", "--model", shlex.quote(model)]
+    if verbose:
+        parts.append("--verbose")
+    parts += [
+        "solve",
+        "--name", shlex.quote(name),
+        "--category", shlex.quote(category),
+        "--desc", shlex.quote(desc),
+    ]
+    if url:
+        parts += ["--url", shlex.quote(url)]
+
+    command = " ".join(parts)
+    payload = {
+        "command": command,
+        "note": "Run this from your local CTF-Agent checkout. If Ollama runs on a different host, pass --ollama-url accordingly.",
+    }
+    return json.dumps(payload, ensure_ascii=False), []
+
+
 def _handle_tool_call(call: dict, session: dict) -> tuple[Optional[dict], list[str]]:
     function = call.get("function") or {}
     name = function.get("name")
     arguments = function.get("arguments") or {}
-    if name != "search_lectures":
-        return {
-            "role": "tool",
-            "tool_name": name or "unknown",
-            "content": json.dumps({"message": "Unknown tool"}, ensure_ascii=False),
-        }, []
+    if not isinstance(arguments, dict):
+        arguments = {}
 
-    query = arguments.get("query", "").strip() if isinstance(arguments, dict) else ""
-    if not query:
-        return {
-            "role": "tool",
-            "tool_name": "search_lectures",
-            "content": json.dumps({"message": "Missing required argument: query"}, ensure_ascii=False),
-        }, []
+    if name == "search_lectures":
+        query = (arguments.get("query") or "").strip()
+        if not query:
+            return {
+                "role": "tool",
+                "tool_name": "search_lectures",
+                "content": json.dumps({"message": "Missing required argument: query"}, ensure_ascii=False),
+            }, []
+        content, sources_used = _run_lecture_search(query, session)
+        return {"role": "tool", "tool_name": "search_lectures", "content": content}, sources_used
 
-    content, sources_used = _run_lecture_search(query, session)
+    if name == "web_search":
+        query = (arguments.get("query") or "").strip()
+        if not query:
+            return {
+                "role": "tool",
+                "tool_name": "web_search",
+                "content": json.dumps({"message": "Missing required argument: query"}, ensure_ascii=False),
+            }, []
+        max_results = arguments.get("max_results")
+        if not isinstance(max_results, int) or not (1 <= max_results <= 10):
+            max_results = 5
+        content, sources_used = _run_web_search(query, max_results=max_results)
+        return {"role": "tool", "tool_name": "web_search", "content": content}, sources_used
+
+    if name == "ctf_agent_command":
+        content, sources_used = _run_ctf_agent_command(arguments)
+        return {"role": "tool", "tool_name": "ctf_agent_command", "content": content}, sources_used
+
     return {
         "role": "tool",
-        "tool_name": "search_lectures",
-        "content": content,
-    }, sources_used
+        "tool_name": name or "unknown",
+        "content": json.dumps({"message": "Unknown tool"}, ensure_ascii=False),
+    }, []
 
 
 def _is_recall_like_mode(mode_id: str) -> bool:
@@ -610,18 +814,61 @@ def _is_wrong_mode(mode_id: str) -> bool:
     return normalized.endswith("_wrong")
 
 
+def _is_ctf_mode(mode_id: str) -> bool:
+    return (mode_id or "").strip().lower() == "ctf"
+
+
 def _should_apply_wrongness(mode_id: str) -> bool:
     return _is_wrong_mode(mode_id) and random.random() < WRONG_MODE_ERROR_RATE
 
 
 def _mode_uses_lecture_support(mode_id: str, apply_wrongness: bool) -> bool:
     # Recall-like modes stay minimal — no lecture tool, no citations.
+    # CTF mode uses web + agent tools instead of lectures.
     # Wrong turns stay ungrounded so the model can drift slightly off course.
     if _is_recall_like_mode(mode_id):
+        return False
+    if _is_ctf_mode(mode_id):
         return False
     if apply_wrongness:
         return False
     return True
+
+
+def _tools_for_mode(session: dict, mode_id: str, apply_wrongness: bool) -> list[dict]:
+    if _is_ctf_mode(mode_id):
+        tools = [_ctf_agent_command_tool_schema()]
+        if ollama_web_search_configured():
+            tools.insert(0, _web_search_tool_schema())
+        return tools
+    if _mode_uses_lecture_support(mode_id, apply_wrongness):
+        return _lecture_tools_for_session(session)
+    return []
+
+
+def _tool_hint_for_mode(mode_id: str, tools: list[dict]) -> str:
+    if not tools:
+        return ""
+    if _is_ctf_mode(mode_id):
+        names = ", ".join(t["function"]["name"] for t in tools)
+        if any(t["function"]["name"] == "web_search" for t in tools):
+            return (
+                f"CTF tools available this session: {names}.\n"
+                "You have live web access via web_search. Do NOT claim you cannot fetch "
+                "real-time information or cite a training cutoff. For any question about "
+                "current events, news, dates, recent releases, CVEs, writeups, or tool "
+                "docs, CALL web_search first. "
+                "Call ctf_agent_command whenever the student wants a ready-to-run CTF-Agent command."
+            )
+        return (
+            f"CTF tools available this session: {names}.\n"
+            "Live web search is not configured for this server, so do NOT claim you searched "
+            "the web or have real-time information. If current CVE details, writeups, or tool "
+            "docs are required, tell the student that an admin must configure an Ollama API key first. "
+            "Call ctf_agent_command whenever the student wants a ready-to-run CTF-Agent command."
+        )
+    # Non-CTF path uses the lecture hint.
+    return _lecture_tool_hint()
 
 
 def _generate_response_with_tools(
@@ -631,9 +878,8 @@ def _generate_response_with_tools(
     session: dict,
     apply_wrongness: bool,
 ) -> tuple[str, list[str], str]:
-    use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
-    tools = _lecture_tools_for_session(session) if use_lectures else []
-    tool_hint = _lecture_tool_hint() if tools else ""
+    tools = _tools_for_mode(session, active_mode, apply_wrongness)
+    tool_hint = _tool_hint_for_mode(active_mode, tools)
     messages = professor.build_messages(
         student_message=student_message,
         mode_id=active_mode,
@@ -794,8 +1040,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                     response_parts.append(token)
                     yield _sse({"token": token})
             else:
-                use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
-                tools = _lecture_tools_for_session(session) if use_lectures else []
+                tools = _tools_for_mode(session, active_mode, apply_wrongness)
                 if not tools:
                     messages = professor.build_messages(
                         student_message=req.message,
@@ -819,7 +1064,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         response_parts.append(token)
                         yield _sse({"token": token})
                 else:
-                    tool_hint = _lecture_tool_hint()
+                    tool_hint = _tool_hint_for_mode(active_mode, tools)
                     messages = professor.build_messages(
                         student_message=req.message,
                         mode_id=active_mode,
@@ -947,6 +1192,46 @@ async def get_model_status(token: str = Depends(verify_admin)):
         "base_url": _effective_local_base_url(),
         "base_url_source": _local_base_url_source(),
         "tool_support": tool_support,
+        "web_search_configured": ollama_web_search_configured(),
+        "web_search_base_url": ollama_web_search_base_url(),
+        "web_search_base_url_source": _web_search_base_url_source(),
+        "web_search_api_key_source": _web_search_api_key_source(),
+    }
+
+
+@app.put("/admin/web-search", tags=["Admin"])
+async def update_web_search_config(request: Request, token: str = Depends(verify_admin)):
+    body = await request.json()
+    api_key = str(body.get("api_key", "") or "").strip()
+    base_url = str(body.get("base_url", "") or "").strip()
+    clear_api_key = bool(body.get("clear_api_key", False))
+
+    if base_url and not (base_url.startswith("http://") or base_url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="Web search API URL must start with http:// or https://")
+
+    with runtime_settings_lock:
+        if clear_api_key:
+            runtime_settings["ollama_api_key"] = ""
+        elif api_key:
+            runtime_settings["ollama_api_key"] = api_key
+        runtime_settings["ollama_web_search_base_url"] = base_url
+    _save_runtime_settings()
+    _sync_web_search_runtime_config()
+
+    api_key_source = _web_search_api_key_source()
+    if clear_api_key and api_key_source == "env":
+        message = "Saved web search API key cleared; environment OLLAMA_API_KEY is still active"
+    elif ollama_web_search_configured():
+        message = "Web search settings saved"
+    else:
+        message = "Web search API key cleared"
+
+    return {
+        "web_search_configured": ollama_web_search_configured(),
+        "web_search_base_url": ollama_web_search_base_url(),
+        "web_search_base_url_source": _web_search_base_url_source(),
+        "web_search_api_key_source": api_key_source,
+        "message": message,
     }
 
 

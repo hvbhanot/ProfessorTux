@@ -7,6 +7,10 @@ data/admin_runtime.json
 # Python
 __pycache__/
 *.pyc
+.venv/
+
+# Local environment
+.env
 
 # OS
 .DS_Store

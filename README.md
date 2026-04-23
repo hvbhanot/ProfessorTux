@@ -87,6 +87,16 @@ ollama signin
 
 Then keep `OLLAMA_BASE_URL` pointed at the local Ollama daemon and switch to a `:*-cloud` model from the admin page.
 
+If you want CTF Mode's live `web_search` tool, create an Ollama API key and either paste it into `Admin → Runtime → CTF Web Search` or add it to `.env`:
+
+```bash
+OLLAMA_API_KEY=your_ollama_api_key
+OLLAMA_WEB_SEARCH_BASE_URL=https://ollama.com
+```
+
+`OLLAMA_BASE_URL` is still only for chat/model endpoints such as `/api/chat`; web search calls `https://ollama.com/api/web_search` directly.
+Keys saved through the admin page are persisted in `data/admin_runtime.json`.
+
 ## Run the app
 
 After setup:
@@ -189,6 +199,8 @@ Core variables from `.env.example`:
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama-compatible backend |
 | `OLLAMA_MODEL` | `qwen3.5:4b` | default model target |
 | `OLLAMA_KEEP_ALIVE` | `5m` | Ollama keep-alive |
+| `OLLAMA_API_KEY` | empty | enables Ollama cloud web search for CTF Mode; can also be saved from admin |
+| `OLLAMA_WEB_SEARCH_BASE_URL` | `https://ollama.com` | Ollama web-search API base URL |
 | `MAX_TOKENS` | `1024` | response cap |
 | `TEMPERATURE` | `0.7` | generation temperature |
 | `MODEL_REQUEST_TIMEOUT` | `60` | backend timeout |

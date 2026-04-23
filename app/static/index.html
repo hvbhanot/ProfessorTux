@@ -47,6 +47,21 @@ body.theme-guided{
   --text-muted:#8d96a2;
 }
 
+body.theme-ctf{
+  --bg:#100707;
+  --surface:#1a0c0c;
+  --surface-2:#22100f;
+  --surface-3:#150a0a;
+  --border:#3a1d1f;
+  --border-strong:#6b2a30;
+  --accent:#ff2a44;
+  --accent-soft:rgba(255,42,68,0.14);
+  --accent-glow:rgba(255,42,68,0.18);
+  --text:#f6ecee;
+  --text-soft:#d6bcbf;
+  --text-muted:#9c7a7e;
+}
+
 *,
 *::before,
 *::after{box-sizing:border-box}
@@ -753,22 +768,26 @@ const SUGGESTIONS = [
   {
     title: "Web Security",
     recall: "Give me one quick hint on how XSS differs from CSRF.",
-    guided: "Teach me the main web application vulnerabilities with examples."
+    guided: "Teach me the main web application vulnerabilities with examples.",
+    ctf: "I have a web CTF box at http://target:8080 — walk me through the first recon steps."
   },
   {
     title: "Cryptography",
     recall: "Give me one recall cue on hashing vs encryption.",
-    guided: "Teach me cryptography fundamentals from first principles."
+    guided: "Teach me cryptography fundamentals from first principles.",
+    ctf: "The challenge gives me a weak RSA public key and a ciphertext — what attacks should I try first?"
   },
   {
-    title: "Network Defense",
+    title: "Binary / Pwn",
     recall: "Give me a one-line nudge on IDS vs IPS.",
-    guided: "Walk me through network defense fundamentals step by step."
+    guided: "Walk me through network defense fundamentals step by step.",
+    ctf: "I have a 64-bit SUID binary with a stack buffer overflow and NX enabled. Plan the exploit."
   },
   {
-    title: "Incident Response",
+    title: "Agent Handoff",
     recall: "Remind me of the first incident response phase without giving the full sequence.",
-    guided: "Walk me through the incident response lifecycle."
+    guided: "Walk me through the incident response lifecycle.",
+    ctf: "Generate a CTF-Agent command for a web challenge called 'robots' at http://target.ctf:8080 — find the hidden admin panel."
   }
 ];
 
@@ -800,6 +819,13 @@ const MODE_UI = {
     copy: "Professor Tux is tuned for teaching, examples, hints, and step-by-step cybersecurity explanations.",
     composerPlaceholder: "Ask Professor Tux to teach, explain, or walk through a topic...",
     subtitle: "Guided chat"
+  },
+  ctf: {
+    label: "CTF Mode",
+    title: "Crack the challenge",
+    copy: "CTF Mode can use live web search when configured and can build a CTF-Agent command for you. Drop a target, category, and objective.",
+    composerPlaceholder: "e.g. I have a web box at http://target:8080 — enumerate it.",
+    subtitle: "CTF-first — web search + Agent commands"
   }
 };
 
@@ -856,7 +882,9 @@ function showToast(text) {
 
 function modeFamily(modeId) {
   const normalized = String(modeId || "").toLowerCase();
-  return normalized.indexOf("guided") === 0 ? "guided" : "recall";
+  if (normalized === "ctf" || normalized.indexOf("ctf") === 0) return "ctf";
+  if (normalized.indexOf("guided") === 0) return "guided";
+  return "recall";
 }
 
 function isWrongMode(modeId) {
@@ -882,7 +910,7 @@ function updateIntroVisibility() {
 }
 
 function updateModeUI() {
-  document.body.classList.remove("theme-recall", "theme-guided");
+  document.body.classList.remove("theme-recall", "theme-guided", "theme-ctf");
   const family = modeFamily(state.mode);
   document.body.classList.add("theme-" + family);
 
@@ -911,7 +939,8 @@ function updateBrandSubtitle() {
   const parts = [];
   const family = modeFamily(state.mode);
   const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
-  parts.push(meta.subtitle || (family === "recall" ? "Recall mode for in-exam use" : "Guided chat"));
+  const familyFallback = family === "recall" ? "Recall mode for in-exam use" : (family === "ctf" ? "CTF mode — web search + Agent commands" : "Guided chat");
+  parts.push(meta.subtitle || familyFallback);
   if (state.adminConfig.topic) parts.push(state.adminConfig.topic);
   if (state.adminConfig.courseFilter) parts.push(state.adminConfig.courseFilter);
   if (!state.adminConfig.topic && !state.adminConfig.courseFilter) parts.push("All cybersecurity topics");

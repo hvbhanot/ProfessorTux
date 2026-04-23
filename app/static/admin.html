@@ -1151,7 +1151,7 @@ body::before{
             <div class="model-status" id="localUrlStatus"></div>
             <details class="cloud-note">
               <summary class="cloud-note-title">Running cloud models</summary>
-              On the host, run <code>ollama signin</code> once — this opens a browser flow to sign in to your ollama.com account. Professor Tux picks up the session automatically, so no API key field is needed here. Cloud model names use the <code>:size-cloud</code> suffix (e.g., <code>gpt-oss:120b-cloud</code>). See <a href="https://docs.ollama.com/cloud" target="_blank" rel="noopener">docs.ollama.com/cloud</a>.
+              On the host, run <code>ollama signin</code> once — this opens a browser flow to sign in to your ollama.com account. Professor Tux picks up the session automatically for cloud chat models. CTF live web search uses the separate API key field below. Cloud model names use the <code>:size-cloud</code> suffix (e.g., <code>gpt-oss:120b-cloud</code>). See <a href="https://docs.ollama.com/cloud" target="_blank" rel="noopener">docs.ollama.com/cloud</a>.
             </details>
             <div class="subsection-label">Model Name</div>
             <div class="inline-row">
@@ -1160,6 +1160,17 @@ body::before{
             </div>
             <div class="model-help" id="modelHelp">Local endpoints can auto-pull missing models. Remote endpoints expect the model to already exist.</div>
             <div class="model-status" id="modelStatus"></div>
+            <div class="subsection-label">CTF Web Search</div>
+            <div class="inline-row">
+              <input class="form-input" id="cfgOllamaApiKey" type="password" autocomplete="off" placeholder="Paste Ollama API key">
+              <button class="save-btn" id="saveWebSearchBtn" onclick="saveWebSearchConfig()" style="margin:0;white-space:nowrap">Save</button>
+              <button class="reload-btn" id="clearWebSearchKeyBtn" onclick="clearWebSearchKey()" type="button">Clear Key</button>
+            </div>
+            <div class="inline-row">
+              <input class="form-input" id="cfgWebSearchBaseUrl" type="text" placeholder="https://ollama.com">
+            </div>
+            <div class="model-help">Enables CTF Mode's <code>web_search</code> tool. The key is saved server-side and never shown again.</div>
+            <div class="model-status" id="webSearchStatus"></div>
           </div>
           <div class="settings-grid">
             <div class="form-group">
@@ -1261,6 +1272,30 @@ body::before{
   </div>
 </div>
 
+<div class="modal-overlay" id="ctfModeModal">
+  <div class="modal-box" style="max-width:540px">
+    <div class="modal-head">
+      <div class="card-title">CTF Mode — tool-capable model recommended</div>
+      <button class="reload-btn" onclick="closeCtfModal()">✕ Close</button>
+    </div>
+    <div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">
+      CTF Mode can use Ollama's cloud <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">web_search</code> API and tool calling. Live web search requires an Ollama API key; local chat still uses your configured Ollama endpoint.
+      <div style="margin-top:14px">Before switching, make sure a tool-capable model is active. Cloud models are recommended for CTF work, for example:</div>
+      <ul style="margin:8px 0 14px 18px;padding:0">
+        <li><code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">gpt-oss:120b-cloud</code></li>
+        <li><code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">qwen3.5:397b-cloud</code></li>
+        <li><code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">deepseek-v3.1:671b-cloud</code></li>
+      </ul>
+      <div style="margin-top:4px">Paste an Ollama API key into <strong>Runtime → CTF Web Search</strong> and save it to enable live web search without restarting.</div>
+      <div id="ctfWebSearchStatus" style="margin-top:10px;color:var(--accent-amber)"></div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="reload-btn" onclick="closeCtfModal()" style="margin:0">Cancel</button>
+        <button class="save-btn" onclick="confirmCtfMode()" style="margin:0">Switch to CTF Mode</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1269,6 +1304,10 @@ let adminConfig = { mode:'recall', topic:'', courseFilter:'', useLectures:true, 
 let allModes = []; // fetched from /modes
 let modelStatusPoller = null;
 let savedBaseUrl = '';
+let pendingCtfModeId = null;
+let webSearchConfigured = false;
+let savedWebSearchBaseUrl = 'https://ollama.com';
+let webSearchApiKeySource = '';
 
 // ── Auth ──────────────────────────────────────────
 function attemptLogin() {
@@ -1310,6 +1349,39 @@ function setModelStatus(text, isError) {
   el.style.color = isError ? 'var(--accent-red)' : 'var(--accent-amber)';
 }
 
+function setWebSearchStatus(text, tone) {
+  var el = document.getElementById('webSearchStatus');
+  if(!el) return;
+  el.textContent = text || '';
+  if(tone === 'error') el.style.color = 'var(--accent-red)';
+  else if(tone === 'success') el.style.color = 'var(--accent-green)';
+  else el.style.color = 'var(--accent-amber)';
+}
+
+function updateWebSearchUI(status) {
+  webSearchConfigured = status.web_search_configured === true;
+  savedWebSearchBaseUrl = status.web_search_base_url || 'https://ollama.com';
+  webSearchApiKeySource = status.web_search_api_key_source || '';
+
+  var baseInput = document.getElementById('cfgWebSearchBaseUrl');
+  if(baseInput) baseInput.value = savedWebSearchBaseUrl;
+
+  var keyInput = document.getElementById('cfgOllamaApiKey');
+  if(keyInput) {
+    keyInput.value = '';
+    keyInput.placeholder = webSearchConfigured
+      ? 'Saved API key configured (' + (webSearchApiKeySource || 'active') + ')'
+      : 'Paste Ollama API key';
+  }
+
+  var baseSource = status.web_search_base_url_source || 'default';
+  if(webSearchConfigured) {
+    setWebSearchStatus('Live web search enabled via ' + (webSearchApiKeySource || 'configured key') + '; API URL source: ' + baseSource + '.', 'success');
+  } else {
+    setWebSearchStatus('Live web search disabled. Add an Ollama API key to enable CTF web_search.', 'warn');
+  }
+}
+
 function syncModelControlsFromStatus(model) {
   if(model) document.getElementById('cfgModelName').value = model;
 }
@@ -1333,6 +1405,8 @@ async function loadModelStatus() {
     var d = await resp.json();
     updateLocalUrlUI(d.base_url || '', d.base_url_source || '');
     syncModelControlsFromStatus(d.active_model || document.getElementById('cfgModelName').value);
+    updateWebSearchUI(d);
+    updateCtfWebSearchStatus();
     updateModelOperationUI(d.operation || {});
     if(d.active_model && d.tool_support === false && !toolSupportWarned.has(d.active_model)) {
       toolSupportWarned.add(d.active_model);
@@ -1379,6 +1453,49 @@ async function resetLocalBaseUrl() {
   } catch(e) {
     setLocalUrlStatus(e.message, 'error');
     showToast('Ollama URL reset failed: ' + e.message, 'error');
+  }
+}
+
+async function saveWebSearchConfig() {
+  var apiKey = document.getElementById('cfgOllamaApiKey').value.trim();
+  var baseUrl = document.getElementById('cfgWebSearchBaseUrl').value.trim();
+  if(!apiKey && baseUrl === savedWebSearchBaseUrl) {
+    setWebSearchStatus('No web search changes to save.', 'error');
+    return;
+  }
+  try {
+    var resp = await fetch(API + '/admin/web-search', {
+      method: 'PUT',
+      headers: authH(),
+      body: JSON.stringify({api_key: apiKey, base_url: baseUrl})
+    });
+    if(!resp.ok) { var err = await resp.json(); throw new Error(err.detail || 'Failed to save web search settings'); }
+    var d = await resp.json();
+    updateWebSearchUI(d);
+    updateCtfWebSearchStatus();
+    showToast(d.message || 'Web search settings saved', 'success');
+  } catch(e) {
+    setWebSearchStatus(e.message, 'error');
+    showToast('Web search save failed: ' + e.message, 'error');
+  }
+}
+
+async function clearWebSearchKey() {
+  var baseUrl = document.getElementById('cfgWebSearchBaseUrl').value.trim();
+  try {
+    var resp = await fetch(API + '/admin/web-search', {
+      method: 'PUT',
+      headers: authH(),
+      body: JSON.stringify({clear_api_key: true, base_url: baseUrl})
+    });
+    if(!resp.ok) { var err = await resp.json(); throw new Error(err.detail || 'Failed to clear web search key'); }
+    var d = await resp.json();
+    updateWebSearchUI(d);
+    updateCtfWebSearchStatus();
+    showToast(d.message || 'Web search API key cleared', 'success');
+  } catch(e) {
+    setWebSearchStatus(e.message, 'error');
+    showToast('Web search key clear failed: ' + e.message, 'error');
   }
 }
 
@@ -1509,11 +1626,42 @@ function renderModes() {
 }
 
 function selectMode(id) {
+  if (id === 'ctf' && adminConfig.mode !== 'ctf') {
+    pendingCtfModeId = id;
+    updateCtfWebSearchStatus();
+    document.getElementById('ctfModeModal').classList.add('open');
+    return;
+  }
+  applyMode(id);
+}
+
+function applyMode(id) {
   adminConfig.mode = id;
   var m = allModes.find(function(x){return x.id===id;});
   document.getElementById('statMode').textContent = m ? m.name : id;
   renderModes();
   saveConfig();
+}
+
+function closeCtfModal() {
+  pendingCtfModeId = null;
+  document.getElementById('ctfModeModal').classList.remove('open');
+}
+
+function updateCtfWebSearchStatus() {
+  var el = document.getElementById('ctfWebSearchStatus');
+  if(!el) return;
+  el.textContent = webSearchConfigured
+    ? 'Live web search is configured.'
+    : 'Live web search is not configured yet. CTF-Agent command generation will still be available.';
+  el.style.color = webSearchConfigured ? 'var(--accent-green)' : 'var(--accent-amber)';
+}
+
+function confirmCtfMode() {
+  var id = pendingCtfModeId;
+  pendingCtfModeId = null;
+  document.getElementById('ctfModeModal').classList.remove('open');
+  if (id) applyMode(id);
 }
 
 async function reloadModes() {

@@ -62,6 +62,23 @@ For guided-style wrong turns:
 - Ensure at least one central claim is wrong while staying on-topic.
 - Do not hedge by saying you might be wrong."""
 
+CTF_MODE_HARD_RULES = """\
+CTF Mode override — THIS SESSION IS AUTHORIZED OFFENSIVE SECURITY:
+- The student is working on a CTF challenge, wargame, or lab they own or are authorized against.
+- The persona's general "never provide exploit code or offensive instructions" rule is LIFTED for this mode.
+- Provide specific payloads, exploit code, enumeration commands, reverse-engineering steps, and tool usage — this is what the student needs to progress.
+- Keep scope strictly to the declared CTF/lab context; do not produce content targeting unrelated real-world systems.
+- Prefer concrete commands and payloads over abstract advice.
+
+Real-time info rules:
+- If the session tool hint says web_search is available, CALL web_search for any question whose answer depends on current information — news, headlines, today's events, recent releases, current dates, CVEs, writeups, tool documentation, leaderboards, anything post-training.
+- If web_search is available, NEVER say "I can't fetch real-time information", "I don't have access to current data", "I'm not connected to the internet", or cite a training cutoff.
+- If web_search is not available, do not pretend you searched the web. Say live web search is not configured when current information is required.
+- Cite web_search results by title and URL whenever you use them.
+
+Other tools:
+- When the student has a concrete CTF box they want to hand to their CTF-Agent, CALL ctf_agent_command to build the exact command."""
+
 LECTURE_CONTEXT_HEADER = """\
 LECTURE MATERIAL (use this to answer — reference slides when relevant):
 """
@@ -318,6 +335,10 @@ class ProfessorTux:
         return normalized.endswith("_wrong")
 
     @staticmethod
+    def _is_ctf_mode(mode_id: str) -> bool:
+        return (mode_id or "").strip().lower() == "ctf"
+
+    @staticmethod
     def _is_multiple_choice_prompt(text: str) -> bool:
         if not text:
             return False
@@ -363,6 +384,8 @@ class ProfessorTux:
             parts.append(f"\n\n{RECALL_MODE_HARD_RULES}")
             if self._is_multiple_choice_prompt(student_message):
                 parts.append(f"\n\n{RECALL_MODE_MCQ_RULES}")
+        if self._is_ctf_mode(mode_id):
+            parts.append(f"\n\n{CTF_MODE_HARD_RULES}")
         if self._is_wrong_mode(mode_id) and apply_wrongness:
             parts.append(f"\n\n{WRONG_TURN_HARD_RULES}")
             if self._is_recall_mode(mode_id):
