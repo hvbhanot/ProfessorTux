@@ -938,7 +938,7 @@ function healthPresentation(status) {
       blocked: false,
       title: "Professor Tux is ready",
       copy: "The teaching engine is connected and ready for chat.",
-      meta: state.health && state.health.active_model ? "Model: " + state.health.active_model : "Model ready"
+      meta: "Teaching engine online"
     };
   }
   if (status === "downloading_model") {
@@ -1485,7 +1485,7 @@ async function sendMessage() {
           removeThinkingCard(thinkingId);
           if (!assistantCard) {
             assistantCard = createAssistantCard();
-            assistantCard.body.innerHTML = formatMarkdown(rawText || "⚠️ The model returned no text.");
+            assistantCard.body.innerHTML = formatMarkdown(rawText || "⚠️ No response received. Please ask again.");
           }
 
           appendAssistantFooter(assistantCard.footer, payload.sources_used || [], payload.hint || "");

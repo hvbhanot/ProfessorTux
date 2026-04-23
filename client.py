@@ -101,11 +101,11 @@ def main():
             print(f"{Colors.YELLOW}[!] No active model target is ready yet. Check Ollama or switch models from /admin.{Colors.RESET}\n")
             return
         
-        print(f"{Colors.BRIGHT_GREEN}[✓] Connected | Modes: {', '.join(h['available_modes'])} | KB: {h['total_lecture_chunks']} chunks{Colors.RESET}\n")
+        print(f"{Colors.BRIGHT_GREEN}[OK] Connected | Modes: {', '.join(h['available_modes'])} | KB: {h['total_lecture_chunks']} chunks{Colors.RESET}\n")
     except Exception as e:
         stop_event.set()
         spinner_thread.join()
-        print(f"{Colors.RED}[✗] Connection failed: Server offline{Colors.RESET}\n")
+        print(f"{Colors.RED}[ERR] Connection failed: Server offline{Colors.RESET}\n")
         return
 
     # Pick mode
@@ -155,7 +155,7 @@ def main():
         if not msg: 
             continue
         if msg.lower() in ("quit", "exit", "q", "logout"): 
-            print(f"{Colors.GREEN}[✓] Session terminated. Goodbye!{Colors.RESET}")
+            print(f"{Colors.GREEN}[OK] Session terminated. Goodbye!{Colors.RESET}")
             break
 
         # Show thinking animation
@@ -180,10 +180,10 @@ def main():
             
             if r.get("sources_used"):
                 sources = ', '.join(r['sources_used'])
-                print(f"{Colors.GREEN}│{Colors.RESET} {Colors.DIM}📎 Sources: {sources}{Colors.RESET}")
-            
+                print(f"{Colors.GREEN}│{Colors.RESET} {Colors.DIM}Sources: {sources}{Colors.RESET}")
+
             if r.get("hint"):
-                print(f"{Colors.GREEN}│{Colors.RESET} {Colors.YELLOW}💡 {r['hint']}{Colors.RESET}")
+                print(f"{Colors.GREEN}│{Colors.RESET} {Colors.YELLOW}Hint: {r['hint']}{Colors.RESET}")
             
             print(f"{Colors.GREEN}└─{Colors.RESET}\n")
             
@@ -194,7 +194,7 @@ def main():
         except Exception as e:
             stop_event.set()
             think_thread.join()
-            print(f"{Colors.RED}[✗] Error: {e}{Colors.RESET}\n")
+            print(f"{Colors.RED}[ERR] Error: {e}{Colors.RESET}\n")
 
 if __name__ == "__main__":
     main()

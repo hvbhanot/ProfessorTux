@@ -1,6 +1,4 @@
-"""
-RAG pipeline for Professor Tux — lecture slide ingestion and retrieval.
-"""
+"""RAG pipeline — lecture slide ingestion and retrieval."""
 
 import os
 import uuid
@@ -48,8 +46,6 @@ class RetrievedContext:
     page_or_slide: Optional[int]
     relevance_score: float
 
-
-# ── Extractors ───────────────────────────────────────────────────────
 
 def extract_text_from_pdf(file_path: str) -> list[dict]:
     import fitz
@@ -102,8 +98,6 @@ EXTRACTORS = {
 }
 
 
-# ── Chunking ─────────────────────────────────────────────────────────
-
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
     if len(text) <= chunk_size: return [text]
     chunks, start = [], 0
@@ -120,8 +114,6 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return chunks
 
 
-# ── Knowledge Base ───────────────────────────────────────────────────
-
 class LectureKnowledgeBase:
     def __init__(self):
         self._embedder: Optional[SentenceTransformer] = None
@@ -136,14 +128,14 @@ class LectureKnowledgeBase:
     def initialize(self):
         os.makedirs(CHROMA_PERSIST_DIR, exist_ok=True)
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        logger.info("⏳ Loading embedding model: %s", EMBEDDING_MODEL)
+        logger.info("Loading embedding model: %s", EMBEDDING_MODEL)
         self._embedder = SentenceTransformer(EMBEDDING_MODEL)
-        logger.info("✅ Embedding model loaded (dim=%d)", self._embedder.get_sentence_embedding_dimension())
+        logger.info("Embedding model loaded (dim=%d)", self._embedder.get_sentence_embedding_dimension())
         self._chroma_client = chromadb.PersistentClient(
             path=CHROMA_PERSIST_DIR, settings=ChromaSettings(anonymized_telemetry=False))
         self._collection = self._chroma_client.get_or_create_collection(
             name="lecture_slides", metadata={"hnsw:space": "cosine"})
-        logger.info("✅ ChromaDB ready (%d chunks)", self._collection.count())
+        logger.info("ChromaDB ready (%d chunks)", self._collection.count())
         self._rebuild_doc_index()
 
     def _rebuild_doc_index(self):
@@ -200,7 +192,7 @@ class LectureKnowledgeBase:
                               num_chunks=len(all_chunks), num_pages=len(pages),
                               uploaded_at=now, file_hash=file_hash)
         self._documents[doc_id] = doc
-        logger.info("✅ Ingested '%s': %d pages → %d chunks", fp.name, len(pages), len(all_chunks))
+        logger.info("Ingested '%s': %d pages → %d chunks", fp.name, len(pages), len(all_chunks))
         return doc
 
     def search(self, query: str, top_k: int = TOP_K_RESULTS,

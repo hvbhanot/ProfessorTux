@@ -1,9 +1,4 @@
-"""
-Professor Tux — provider-agnostic LLM wrapper.
-=============================================
-Uses the ModeLoader to dynamically build system prompts from
-mode definition files. No hardcoded mode logic.
-"""
+"""Provider-agnostic LLM wrapper that routes chat through a selectable backend."""
 
 import os
 import re
@@ -24,15 +19,15 @@ DEFAULT_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1024"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 
 
-# ── Base persona (shared across ALL modes) ───────────────────────────
 PERSONA_BASE = """\
 You are Professor Tux, a cybersecurity teacher.
+Identity rule: you are Professor Tux. If asked what model, AI, LLM, provider, company, or system powers you, or asked for a version, vendor, or technical stack, answer only as Professor Tux and decline to name any underlying model. Do not confirm or deny specific model or provider names. Never mention Ollama, OpenAI, Anthropic, Google, Meta, Mistral, Gemma, Qwen, Llama, GPT, Claude, or any other model or vendor name.
 Be concise by default.
 For greetings or small talk, reply briefly and do not start teaching.
 For cybersecurity questions, teach clearly and safely.
 Never provide exploit code or offensive instructions that enable harm.
-Use tools only when you need external course context.
-When a tool returns lecture material, summarize it naturally and cite slide numbers when relevant."""
+When the search_lectures tool is available, CALL IT FIRST for any question that could touch course material — the student's uploaded lectures are the course of record and take precedence over your training knowledge. Only skip the tool for pure greetings or small talk.
+When the tool returns lecture material, summarize it naturally and cite slide numbers when relevant."""
 
 RECALL_MODE_HARD_RULES = """\
 Recall Mode hard rules:
@@ -190,7 +185,7 @@ class ProfessorTux:
         backend.validate_model(model)
         self._active_provider = provider
         self._active_model = model
-        logger.info("🎯 Active model target set to %s:%s", provider, model)
+        logger.info("Active model target set to %s:%s", provider, model)
 
     def _get_active_backend(self) -> ModelBackend:
         if not self._active_provider or not self._active_model:
@@ -304,12 +299,12 @@ class ProfessorTux:
         kind = self.social_message_kind(text)
         if kind == "greeting":
             if self._is_recall_mode(mode_id):
-                return "🐧 Hey! Ready when you are. Give me a cybersecurity topic and I'll help you work it out."
-            return "🐧 Hey! Ready when you are. Give me a cybersecurity topic and I'll break it down clearly."
+                return "Hey! Ready when you are. Give me a cybersecurity topic and I'll help you work it out."
+            return "Hey! Ready when you are. Give me a cybersecurity topic and I'll break it down clearly."
         if kind == "thanks":
-            return "🐧 You’re welcome. Send the next cybersecurity question whenever you’re ready."
+            return "You're welcome. Send the next cybersecurity question whenever you're ready."
         if kind == "farewell":
-            return "🐧 See you next time."
+            return "See you next time."
         return None
 
     @staticmethod
@@ -354,21 +349,14 @@ class ProfessorTux:
         history: list[dict],
         lecture_context: str = "",
         apply_wrongness: bool = False,
+        lecture_tool_hint: str = "",
     ) -> list[dict]:
-        """
-        Build chat-completion messages optimized for small models.
-
-        Strategy: keep system prompt short, inject mode behavior via
-        few-shot example turns so the model learns by imitation.
-        """
         mode_def = self._mode_loader.get_mode(mode_id)
         mode_rules = mode_def.system_prompt if mode_def else ""
         mode_name = mode_def.name if mode_def else "Default"
 
-        # Split mode file into rules and examples
         rules, examples = self._split_mode_prompt(mode_rules)
 
-        # Build a concise system prompt
         parts = [PERSONA_BASE]
         parts.append(f"\n\nYou are in {mode_name}. {rules}")
         if self._is_recall_mode(mode_id):
@@ -385,19 +373,20 @@ class ProfessorTux:
         if topic:
             parts.append(f"\nCurrent topic: {topic}.")
 
+        if lecture_tool_hint:
+            parts.append(f"\n\n{lecture_tool_hint}")
+
         if lecture_context:
             parts.append(f"\n\n{LECTURE_CONTEXT_HEADER}{lecture_context}")
 
         system_prompt = "".join(parts)
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Inject few-shot examples as conversation turns — this is how
-        # small models actually learn the expected behavior
+        # Few-shot examples — small models learn expected behavior by imitation.
         for ex in examples:
             messages.append({"role": "user", "content": ex["student"]})
             messages.append({"role": "assistant", "content": ex["response"]})
 
-        # Conversation history (last 16 turns to leave room for examples)
         for msg in history[-16:]:
             role = "user" if msg["role"] == "student" else "assistant"
             messages.append({"role": role, "content": msg["content"]})
@@ -517,12 +506,7 @@ class ProfessorTux:
 
     @staticmethod
     def _split_mode_prompt(prompt: str) -> tuple[str, list[dict]]:
-        """
-        Split a mode prompt into concise rules and few-shot examples.
-
-        Looks for lines starting with **Student:** / **Response:** or
-        🐧 patterns to extract example pairs.
-        """
+        """Split a mode prompt body into rule text and **Student:**/**Response:** few-shot pairs."""
         examples = []
         rule_lines = []
         lines = prompt.split("\n")
@@ -532,16 +516,13 @@ class ProfessorTux:
         while i < len(lines):
             line = lines[i].strip()
 
-            # Detect example section
             if line.lower().startswith("## example") or line.lower().startswith("## response"):
                 in_examples = True
                 i += 1
                 continue
 
-            # Parse Student/Response pairs
             if in_examples and line.startswith("**Student:**"):
                 student_text = line.replace("**Student:**", "").strip().strip('"')
-                # Scan ahead for the response
                 response_lines = []
                 i += 1
                 while i < len(lines):
@@ -558,14 +539,13 @@ class ProfessorTux:
                     })
                 continue
 
-            # Collect rule lines (skip headers, blank lines, markdown dividers)
             if not in_examples and line and not line.startswith("#") and not line.startswith("---"):
                 rule_lines.append(line)
 
             i += 1
 
         rules = " ".join(rule_lines)
-        # Trim rules to ~500 chars for small models
+        # Small models do better with short rules; cap at ~500 chars.
         if len(rules) > 500:
             rules = rules[:497] + "..."
 
@@ -580,7 +560,6 @@ class ProfessorTux:
         lecture_context: str = "",
         apply_wrongness: bool = False,
     ) -> str:
-        """Generate Professor Tux's response using the specified mode."""
         social_response = self.social_response(student_message, mode_id)
         if social_response is not None:
             return social_response
@@ -600,12 +579,12 @@ class ProfessorTux:
             )
         except BackendError as e:
             logger.error("LLM request failed: %s", e)
-            return "⚠️ Generation failed — the selected model backend is unavailable. Check the active model in admin."
+            return "⚠️ The teaching engine is unavailable right now. Please try again shortly."
 
         content = _strip_thinking(content)
         if content:
             return content
-        return "⚠️ The model finished without a visible answer. Try the same question again or switch models."
+        return "⚠️ I couldn't finish that answer. Please ask again."
 
     def generate_stream(
         self,
@@ -616,7 +595,6 @@ class ProfessorTux:
         lecture_context: str = "",
         apply_wrongness: bool = False,
     ):
-        """Yield tokens as they are generated (for SSE streaming)."""
         social_response = self.social_response(student_message, mode_id)
         if social_response is not None:
             yield social_response
@@ -644,19 +622,16 @@ class ProfessorTux:
 
                 buffer += token
 
-                # Suppress <think>...</think> blocks from streaming output
+                # Suppress <think>...</think> blocks from streaming output.
                 if not in_think:
                     if "<think>" in buffer:
-                        # Yield everything before <think>
                         before = buffer[:buffer.index("<think>")]
                         if before:
                             yield before
                         buffer = buffer[buffer.index("<think>"):]
                         in_think = True
                     else:
-                        # Only yield if we're sure we're not mid-tag
-                        safe = buffer
-                        # Hold back a few chars in case "<think>" is being built up
+                        # Hold back 6 chars so a partial "<think>" split across chunks isn't emitted.
                         if len(buffer) > 6:
                             safe = buffer[:-6]
                             buffer = buffer[-6:]
@@ -665,16 +640,14 @@ class ProfessorTux:
                         if safe:
                             yield safe
                 else:
-                    # Inside <think> block, don't yield
                     if "</think>" in buffer:
                         after = buffer[buffer.index("</think>") + 8:]
                         buffer = after
                         in_think = False
 
-            # Flush remaining buffer
             if not in_think and buffer:
                 yield buffer
 
         except BackendError as e:
             logger.error("LLM stream failed: %s", e)
-            yield "\n\n⚠️ Generation failed — the selected model backend is unavailable. Check the active model in admin."
+            yield "\n\n⚠️ The teaching engine is unavailable right now. Please try again shortly."

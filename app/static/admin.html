@@ -1093,7 +1093,7 @@ body::before{
            onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
     <input class="login-field" id="loginPass" type="password" placeholder="Password"
            onkeydown="if(event.key==='Enter')attemptLogin()">
-    <button class="login-btn" onclick="attemptLogin()">🔐 Authenticate</button>
+    <button class="login-btn" onclick="attemptLogin()">Authenticate</button>
     <div class="login-error" id="loginError"></div>
   </div>
 </div>
@@ -1126,7 +1126,7 @@ body::before{
     <!-- Modes — dynamic -->
     <div class="card card-mode">
       <div class="card-header">
-        <div class="card-title">🎯 Student Mode</div>
+        <div class="card-title">Student Mode</div>
         <button class="reload-btn" onclick="reloadModes()">↻ Reload Modes</button>
       </div>
       <div class="card-body">
@@ -1136,7 +1136,7 @@ body::before{
 
     <!-- Config -->
     <div class="card card-runtime">
-      <div class="card-header"><div class="card-title">⚙️ Runtime</div></div>
+      <div class="card-header"><div class="card-title">Runtime</div></div>
       <div class="card-body">
         <div class="config-form">
           <div class="form-group">
@@ -1187,12 +1187,11 @@ body::before{
     <!-- Lectures -->
     <div class="card full-width card-library">
       <div class="card-header">
-        <div class="card-title">📚 Lecture Slides</div>
+        <div class="card-title">Lecture Slides</div>
         <span class="section-meta" id="fileCount">0 files</span>
       </div>
       <div class="card-body">
         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')" ondrop="handleDrop(event)">
-          <div class="icon">📄</div>
           <div class="text">Drop files here or <span>click to browse</span></div>
           <div class="formats">PDF · PPTX · TXT · MD</div>
         </div>
@@ -1210,7 +1209,7 @@ body::before{
     <!-- Chat Logs -->
     <div class="card full-width card-logs">
       <div class="card-header">
-        <div class="card-title">📋 Session Logs</div>
+        <div class="card-title">Session Logs</div>
         <div class="toolbar">
           <input class="form-input form-input-compact" id="logFilterIp" type="text" placeholder="Filter by IP">
           <input class="form-input form-input-compact form-input-session" id="logFilterSession" type="text" placeholder="Filter by Session">
@@ -1278,7 +1277,7 @@ function attemptLogin() {
   fetch(API + '/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user,password:pass}) })
     .then(function(r) { if(!r.ok) throw 0; return r.json(); })
     .then(function(d) { sessionStorage.setItem('admin_token',d.token); show(); })
-    .catch(function() { document.getElementById('loginError').textContent='✕ Invalid credentials'; });
+    .catch(function() { document.getElementById('loginError').textContent='Invalid credentials'; });
 }
 function logout() { sessionStorage.removeItem('admin_token'); hide(); }
 function show() { document.getElementById('loginOverlay').classList.add('hidden'); document.getElementById('adminPanel').classList.add('visible'); loadDashboard(); }
@@ -1465,9 +1464,8 @@ async function checkHealth() {
     document.getElementById('statChunks').textContent = d.total_lecture_chunks;
     if(d.model_loaded){
       dot.className='status-dot';
-      txt.textContent = d.active_model ? ('Online · ' + d.active_model) : 'Online';
+      txt.textContent='Online';
       stat.textContent='Online';
-      if(d.active_model) syncModelControlsFromStatus(d.active_model);
     } else if(d.status === 'no_model') {
       dot.className='status-dot loading';
       txt.textContent='No model';
@@ -1606,7 +1604,7 @@ async function loadFiles() {
     if(!d.total){tb.innerHTML='<tr><td colspan="6" class="empty-state">No slides uploaded</td></tr>';return;}
     tb.innerHTML = d.documents.map(function(doc){
       return '<tr>' +
-        '<td class="file-name">📄 ' + doc.filename + '</td>' +
+        '<td class="file-name">' + doc.filename + '</td>' +
         '<td class="file-course">' + (doc.course || '—') + '</td>' +
         '<td>' + doc.num_pages + '</td>' +
         '<td><span class="file-badge">' + doc.num_chunks + '</span></td>' +

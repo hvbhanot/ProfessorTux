@@ -1,11 +1,4 @@
-"""
-Professor Tux — Cybersecurity Teaching API (v3)
-================================================
-- Student chat at /
-- Admin panel at /admin
-- Dynamic teaching modes from .md skill files
-- Lecture slide RAG pipeline
-"""
+"""Professor Tux — cybersecurity teaching API. Chat, modes, lecture RAG, admin."""
 
 import os
 import json
@@ -47,17 +40,14 @@ RUNTIME_SETTINGS_PATH = Path("./data/admin_runtime.json")
 logger = logging.getLogger("professor_tux")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(name)s  %(message)s")
 
-# Also log to file
 os.makedirs(LOG_FILE_DIR, exist_ok=True)
 _file_handler = logging.FileHandler(LOG_FILE_DIR / "professor_tux.log", encoding="utf-8")
 _file_handler.setFormatter(logging.Formatter("%(asctime)s  %(name)s  %(levelname)s  %(message)s"))
 logging.getLogger().addHandler(_file_handler)
 
-# ── Admin credentials ────────────────────────────────────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "professortux")
 
-# ── Globals ──────────────────────────────────────────────────────────
 mode_loader = ModeLoader()
 professor: ProfessorTux | None = None
 sessions = SessionManager()
@@ -189,43 +179,37 @@ def _reset_model_operation():
         })
 
 
-# ── Lifespan ─────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global professor
     _load_runtime_settings()
-    # 1. Discover teaching modes
     n = mode_loader.discover()
-    logger.info("📋 %d teaching mode(s) available: %s",
+    logger.info("%d teaching mode(s) available: %s",
                 n, ", ".join(mode_loader.available_modes))
-    # Default admin mode to first discovered mode if current is invalid
     if not mode_loader.is_valid_mode(admin_config["mode"]):
         if mode_loader.available_modes:
             admin_config["mode"] = mode_loader.available_modes[0]
     admin_config["maxTokens"] = _effective_max_tokens()
-    # 2. Create professor (model loaded later via admin panel)
+    # Model is loaded later via the admin panel.
     professor = ProfessorTux(mode_loader)
     professor.configure_backend(base_url=_effective_local_base_url())
     professor.configure_generation(max_tokens=_effective_max_tokens())
     if professor.active_model:
         logger.info(
-            "🐧 Professor Tux ready — default Ollama model target is %s.",
+            "Professor Tux ready — default Ollama model target is %s.",
             professor.active_model,
         )
     else:
-        logger.info("🐧 Professor Tux ready — no model target configured. Select one from the admin panel.")
-    # 3. Init knowledge base
+        logger.info("Professor Tux ready — no model target configured. Select one from the admin panel.")
     knowledge_base.initialize()
-    # 4. Init chat logger
     chat_logger.initialize()
     yield
     del professor
     professor = None
 
 
-# ── App ──────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Professor Tux 🐧",
+    title="Professor Tux",
     description="Cybersecurity teaching assistant with pluggable teaching modes and RAG.",
     version="3.0.0",
     lifespan=lifespan,
@@ -241,7 +225,6 @@ app.add_middleware(
 )
 
 
-# ── Auth helpers ─────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
     username: str
@@ -257,7 +240,6 @@ def verify_admin(request: Request):
     return auth[7:]
 
 
-# ━━━━━━━━━━━━━━━━━━━━  FRONTEND  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/", include_in_schema=False)
 async def student_page():
@@ -277,7 +259,6 @@ async def docs_page():
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-# ━━━━━━━━━━━━━━━━━━━━  ADMIN AUTH  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.post("/admin/login", tags=["Admin"])
 async def admin_login(req: LoginRequest):
@@ -293,7 +274,6 @@ async def admin_verify(token: str = Depends(verify_admin)):
     return {"valid": True}
 
 
-# ━━━━━━━━━━━━━━━━━━━━  ADMIN CONFIG  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/admin/config", tags=["Admin"])
 async def get_config(token: str = Depends(verify_admin)):
@@ -334,7 +314,6 @@ async def get_public_config():
     return admin_config
 
 
-# ━━━━━━━━━━━━━━━━━━━━  MODES  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/modes", response_model=ModeListResponse, tags=["Modes"])
 async def list_modes():
@@ -353,7 +332,6 @@ async def reload_modes(token: str = Depends(verify_admin)):
     return {"reloaded": n, "modes": mode_loader.available_modes}
 
 
-# ━━━━━━━━━━━━━━━━━━━━  SYSTEM  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
@@ -369,13 +347,10 @@ async def health_check():
         knowledge_base_loaded=knowledge_base.is_loaded,
         total_lecture_chunks=kb_stats.get("total_chunks", 0),
         available_modes=mode_loader.available_modes,
-        active_model=professor.active_model if professor else "",
-        active_provider=professor.active_provider if professor else "",
         status_detail=operation.get("status", ""),
     )
 
 
-# ━━━━━━━━━━━━━━━━━━━━  SESSIONS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.post("/sessions", response_model=SessionCreateResponse, tags=["Sessions"])
 async def create_session(req: SessionCreateRequest):
@@ -415,7 +390,6 @@ async def switch_mode(session_id: str, mode: str):
     return {"session_id": session_id, "new_mode": mode}
 
 
-# ━━━━━━━━━━━━━━━━━━━━  CHAT  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
@@ -434,7 +408,7 @@ def _normalize_model_name(model: str) -> str:
 
 
 def _empty_response_fallback() -> str:
-    return "⚠️ The model returned no final answer. Try the same question again or switch models."
+    return "⚠️ I couldn't finish that answer. Please ask again."
 
 
 def _sse(payload: dict) -> str:
@@ -513,8 +487,12 @@ def _lecture_search_tool_schema() -> dict:
         "function": {
             "name": "search_lectures",
             "description": (
-                "Search uploaded lecture slides and notes for relevant course material. "
-                "Use this when course content is needed to answer accurately or cite slides."
+                "Search the student's uploaded lecture slides and notes. "
+                "Call this FIRST for any question that could touch course material "
+                "(concepts, names, definitions, examples, people, projects). "
+                "The uploaded lectures are the course of record — prefer their "
+                "content over your training knowledge. Only skip for pure "
+                "greetings or small talk."
             ),
             "parameters": {
                 "type": "object",
@@ -528,6 +506,27 @@ def _lecture_search_tool_schema() -> dict:
             },
         },
     }
+
+
+def _lecture_tool_hint() -> str:
+    if not knowledge_base.is_loaded:
+        return ""
+    docs = knowledge_base.list_documents()
+    if not docs:
+        return ""
+    lines = []
+    for d in docs[:20]:
+        label = d.get("lecture_title") or d.get("filename") or "document"
+        course = d.get("course")
+        lines.append(f"- {label}" + (f" ({course})" if course else ""))
+    names = "\n".join(lines)
+    return (
+        "Uploaded lecture material available via the `search_lectures` tool:\n"
+        f"{names}\n"
+        "Call `search_lectures` first for any content question — these lectures "
+        "are the student's course of record and take precedence over your "
+        "training knowledge."
+    )
 
 
 def _lecture_tools_for_session(session: dict) -> list[dict]:
@@ -634,6 +633,7 @@ def _generate_response_with_tools(
 ) -> tuple[str, list[str], str]:
     use_lectures = _mode_uses_lecture_support(active_mode, apply_wrongness)
     tools = _lecture_tools_for_session(session) if use_lectures else []
+    tool_hint = _lecture_tool_hint() if tools else ""
     messages = professor.build_messages(
         student_message=student_message,
         mode_id=active_mode,
@@ -641,6 +641,7 @@ def _generate_response_with_tools(
         history=session["history"],
         lecture_context="",
         apply_wrongness=apply_wrongness,
+        lecture_tool_hint=tool_hint,
     )
     system_prompt = messages[0]["content"] if messages else ""
     sources_used: list[str] = []
@@ -657,7 +658,7 @@ def _generate_response_with_tools(
         )
         if response_text.strip():
             return response_text, list(dict.fromkeys(sources_used)), system_prompt
-        return "⚠️ The model returned no final answer. Try the same question again or switch models.", sources_used, system_prompt
+        return "⚠️ I couldn't finish that answer. Please ask again.", sources_used, system_prompt
 
     for _ in range(3):
         assistant_message = professor.chat_once(
@@ -672,7 +673,7 @@ def _generate_response_with_tools(
         if not tool_calls:
             if last_content:
                 return last_content, sources_used, system_prompt
-            return "⚠️ The model returned no final answer. Try the same question again or switch models.", sources_used, system_prompt
+            return "⚠️ I couldn't finish that answer. Please ask again.", sources_used, system_prompt
 
         executed_any = False
         for call in tool_calls:
@@ -684,7 +685,7 @@ def _generate_response_with_tools(
         if not executed_any:
             break
 
-    return last_content or "⚠️ Generation failed — the model did not complete the tool flow.", list(dict.fromkeys(sources_used)), system_prompt
+    return last_content or "⚠️ I had trouble pulling up the lecture material. Please try again.", list(dict.fromkeys(sources_used)), system_prompt
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
@@ -707,7 +708,6 @@ async def chat(req: ChatRequest, request: Request):
     sources_used: list[str] = []
     system_prompt = ""
 
-    # Generate
     t0 = time.perf_counter()
     if is_social:
         response_text = professor.generate(
@@ -730,7 +730,6 @@ async def chat(req: ChatRequest, request: Request):
     sessions.add_message(req.session_id, role="student", content=req.message)
     sessions.add_message(req.session_id, role="professor_tux", content=response_text)
 
-    # Log the interaction
     chat_logger.log(ChatLogEntry(
         timestamp=datetime.now(timezone.utc).isoformat(),
         ip=_get_client_ip(request),
@@ -820,6 +819,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         response_parts.append(token)
                         yield _sse({"token": token})
                 else:
+                    tool_hint = _lecture_tool_hint()
                     messages = professor.build_messages(
                         student_message=req.message,
                         mode_id=active_mode,
@@ -827,6 +827,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         history=session["history"],
                         lecture_context="",
                         apply_wrongness=apply_wrongness,
+                        lecture_tool_hint=tool_hint,
                     )
                     system_prompt = messages[0]["content"] if messages else ""
 
@@ -875,12 +876,12 @@ async def chat_stream(req: ChatRequest, request: Request):
                             break
                     else:
                         if not response_parts:
-                            fallback = "⚠️ Generation failed — the model did not complete the tool flow."
+                            fallback = "⚠️ I had trouble pulling up the lecture material. Please try again."
                             response_parts.append(fallback)
                             yield _sse({"token": fallback})
         except BackendError as exc:
             logger.error("Streaming chat failed: %s", exc)
-            error_text = f"⚠️ Generation failed — {exc}"
+            error_text = "⚠️ The teaching engine hit an error. Please try again."
             yield _sse({"error": error_text})
             yield _sse({"done": True, "mode": active_mode, "hint": None if is_social else mode_loader.get_hint(active_mode), "sources_used": list(dict.fromkeys(sources_used))})
             return
@@ -927,7 +928,7 @@ async def chat_stream(req: ChatRequest, request: Request):
 
 
 @app.get("/models", tags=["Models"])
-async def list_models():
+async def list_models(token: str = Depends(verify_admin)):
     """List model targets visible from the configured Ollama endpoint."""
     return {"models": professor.list_available_models() if professor else []}
 
@@ -1025,7 +1026,6 @@ async def switch_model(request: Request, token: str = Depends(verify_admin)):
     }
 
 
-# ━━━━━━━━━━━━━━━━━━━━  LECTURES  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.post("/lectures/upload", response_model=LectureUploadResponse, tags=["Lectures"])
 async def upload_lecture(
@@ -1057,7 +1057,7 @@ async def upload_lecture(
         doc_id=doc.doc_id, filename=doc.filename, course=doc.course,
         lecture_title=doc.lecture_title, file_type=doc.file_type,
         num_pages=doc.num_pages, num_chunks=doc.num_chunks,
-        message=f"✅ {doc.filename}: {doc.num_pages} pages → {doc.num_chunks} chunks",
+        message=f"{doc.filename}: {doc.num_pages} pages → {doc.num_chunks} chunks",
     )
 
 
@@ -1096,7 +1096,6 @@ async def knowledge_base_stats():
     return KnowledgeBaseStatsResponse(**knowledge_base.get_stats())
 
 
-# ━━━━━━━━━━━━━━━━━━━━  CHAT LOGS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/admin/logs", tags=["Admin"])
 async def get_chat_logs(
@@ -1144,24 +1143,22 @@ async def download_server_log(token: str = Depends(verify_admin)):
     )
 
 
-# ━━━━━━━━━━━━━━━━━━━━  HELPERS  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _welcome_message(mode_def, topic: str | None, use_lectures: bool) -> str:
     topic_str = f" on **{topic}**" if topic else ""
-    lec_str = ("\n📚 I have access to your lecture slides and will reference them."
+    lec_str = ("\nI have access to your lecture slides and will reference them."
                if use_lectures else "")
     student_mode_def = mode_def
     if mode_def and _is_wrong_mode(mode_def.id):
         family_id = "guided" if mode_def.id.startswith("guided") else "recall"
         student_mode_def = mode_loader.get_mode(family_id) or mode_def
 
-    icon = student_mode_def.icon if student_mode_def else "🐧"
     name = student_mode_def.name if student_mode_def else "Unknown Mode"
     desc = student_mode_def.description if student_mode_def else ""
 
     return (
-        f"🐧 Welcome, student! I'm Professor Tux.\n\n"
-        f"{icon} We're in **{name}**{topic_str}.\n"
+        f"Welcome, student! I'm Professor Tux.\n\n"
+        f"We're in **{name}**{topic_str}.\n"
         f"{desc}\n"
         f"What would you like to explore?{lec_str}"
     )

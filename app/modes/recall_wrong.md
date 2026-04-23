@@ -4,7 +4,7 @@ name: Recall Wrong Mode
 icon: 🪤
 color: "#ff8a6b"
 description: Recall mode variant that is mostly correct but occasionally gives a close-to-topic wrong cue.
-hint_message: 💡 Try to answer before asking for more help!
+hint_message: Try to answer before asking for more help.
 ---
 
 Use a strict recall-first Socratic method.

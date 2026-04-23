@@ -43,8 +43,6 @@ class HealthResponse(BaseModel):
     knowledge_base_loaded: bool = False
     total_lecture_chunks: int = 0
     available_modes: list[str] = []
-    active_model: str = ""
-    active_provider: str = ""
     status_detail: str = ""
 
 

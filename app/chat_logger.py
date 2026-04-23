@@ -1,9 +1,4 @@
-"""
-Chat Logger — Persists every chat interaction to a JSONL file.
-===============================================================
-Logs: timestamp, client IP, session ID, mode, topic, question,
-full system prompt, response, sources, and duration.
-"""
+"""Append-only JSONL logger for chat interactions."""
 
 import os
 import json
@@ -48,7 +43,7 @@ class ChatLogger:
         os.makedirs(self._log_dir, exist_ok=True)
         if not self._log_path.exists():
             self._log_path.touch()
-        logger.info("📝 Chat logger ready: %s", self._log_path)
+        logger.info("Chat logger ready: %s", self._log_path)
 
     def log(self, entry: ChatLogEntry):
         try:
@@ -89,7 +84,6 @@ class ChatLogger:
                 except json.JSONDecodeError:
                     continue
 
-        # Newest first
         all_entries.reverse()
         total = len(all_entries)
         page = all_entries[offset : offset + limit]
