@@ -750,6 +750,7 @@ OLLAMA_KEEP_ALIVE=5m</code></pre></div>
           <div class="step">
             <strong>5. Optional: enable CTF live web search</strong>
             <p>Create an Ollama API key, then paste it into <em>Admin → Runtime → CTF Web Search</em>. You can also add it to <code>.env</code> and restart Professor Tux.</p>
+            <p>When configured, CTF Mode preloads web search results for every non-social CTF turn and can still run narrower follow-up searches when needed.</p>
             <div class="code-block"><pre><code>OLLAMA_API_KEY=your_ollama_api_key
 OLLAMA_WEB_SEARCH_BASE_URL=https://ollama.com</code></pre></div>
           </div>

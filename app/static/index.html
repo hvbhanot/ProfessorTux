@@ -477,6 +477,71 @@ button,input,textarea{font:inherit}
   margin-top:14px;
 }
 
+.sources-panel{
+  width:100%;
+  border:1px solid var(--border);
+  border-radius:18px;
+  background:rgba(255,255,255,0.018);
+  padding:10px;
+}
+
+.sources-label{
+  color:var(--text-muted);
+  font:700 10px/1 var(--font-mono);
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  margin:0 0 8px;
+}
+
+.sources-list{
+  display:grid;
+  gap:6px;
+}
+
+.source-link{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding:7px 9px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  background:rgba(255,255,255,0.018);
+  color:var(--text-soft);
+  font:600 11px/1.3 var(--font-mono);
+  text-decoration:none;
+}
+
+.source-link.has-host{
+  grid-template-columns:auto minmax(0,1fr) auto;
+}
+
+.source-link[href]:hover{
+  border-color:var(--border-strong);
+  color:var(--text);
+}
+
+.source-index{
+  color:var(--accent);
+  opacity:.8;
+}
+
+.source-title{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.source-host{
+  color:var(--text-muted);
+  font-weight:600;
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
 .tag{
   display:inline-flex;
   align-items:center;
@@ -1106,15 +1171,76 @@ function createAssistantCard() {
   };
 }
 
+function parseSource(source) {
+  const text = String(source || "");
+  const separator = text.lastIndexOf(" — http");
+  const parsed = {
+    title: text,
+    url: "",
+    host: ""
+  };
+  if (separator !== -1) {
+    parsed.title = text.slice(0, separator).trim();
+    parsed.url = text.slice(separator + 3).trim();
+  }
+  if (parsed.url) {
+    try {
+      const u = new URL(parsed.url);
+      parsed.host = u.hostname.replace(/^www\./, "");
+    } catch (error) {
+      parsed.url = "";
+    }
+  }
+  return parsed;
+}
+
 function appendAssistantFooter(footer, sources, hint) {
   footer.innerHTML = "";
   if (sources && sources.length) {
-    sources.forEach(function(source) {
-      const tag = document.createElement("span");
-      tag.className = "tag source";
-      tag.textContent = source;
-      footer.appendChild(tag);
+    const parsedSources = sources.map(parseSource);
+    const panel = document.createElement("div");
+    panel.className = "sources-panel";
+
+    const label = document.createElement("div");
+    label.className = "sources-label";
+    label.textContent = parsedSources.some(function(source) { return Boolean(source.url); }) ? "Web sources" : "Sources";
+    panel.appendChild(label);
+
+    const list = document.createElement("div");
+    list.className = "sources-list";
+    parsedSources.forEach(function(parsed, index) {
+      const item = document.createElement(parsed.url ? "a" : "div");
+      item.className = "source-link";
+      if (parsed.url) {
+        item.classList.add("has-host");
+        item.href = parsed.url;
+        item.target = "_blank";
+        item.rel = "noopener noreferrer";
+        item.title = parsed.title + " — " + parsed.url;
+      } else {
+        item.title = parsed.title;
+      }
+
+      const number = document.createElement("span");
+      number.className = "source-index";
+      number.textContent = String(index + 1).padStart(2, "0");
+
+      const title = document.createElement("span");
+      title.className = "source-title";
+      title.textContent = parsed.title;
+
+      item.appendChild(number);
+      item.appendChild(title);
+      if (parsed.host) {
+        const host = document.createElement("span");
+        host.className = "source-host";
+        host.textContent = parsed.host;
+        item.appendChild(host);
+      }
+      list.appendChild(item);
     });
+    panel.appendChild(list);
+    footer.appendChild(panel);
   }
   if (hint) {
     const tag = document.createElement("span");

@@ -624,11 +624,13 @@ def _web_search_tool_schema() -> dict:
         "function": {
             "name": "web_search",
             "description": (
-                "Live web search. Use this for ANY question whose answer depends on current "
-                "or post-training information — news, today's date or events, recent releases, "
+                "Live web search. In CTF mode, the server preloads one web search before "
+                "answering each non-social turn; call this tool again only for narrower "
+                "follow-up searches or missing current details. Use it for current or "
+                "post-training information — news, today's date or events, recent releases, "
                 "CVEs, writeups, payloads, tool docs, leaderboards, prices. "
                 "You HAVE real-time web access via this tool; do NOT claim otherwise. "
-                "If unsure whether your training data is current enough, call this tool first."
+                "If unsure whether the preloaded results are current or specific enough, call this tool."
             ),
             "parameters": {
                 "type": "object",
@@ -728,6 +730,12 @@ def _run_web_search(query: str, max_results: int = 5) -> tuple[str, list[str]]:
     ]
     sources = [f"{r['title']} — {r['url']}" for r in compact if r.get("url")]
     return json.dumps({"query": query, "results": compact}, ensure_ascii=False), sources
+
+
+def _tool_loop_fallback(active_mode: str) -> str:
+    if _is_ctf_mode(active_mode):
+        return "⚠️ I had trouble using the CTF tools. Please try again."
+    return "⚠️ I had trouble pulling up the lecture material. Please try again."
 
 
 def _run_ctf_agent_command(args: dict) -> tuple[str, list[str]]:
@@ -854,10 +862,11 @@ def _tool_hint_for_mode(mode_id: str, tools: list[dict]) -> str:
         if any(t["function"]["name"] == "web_search" for t in tools):
             return (
                 f"CTF tools available this session: {names}.\n"
-                "You have live web access via web_search. Do NOT claim you cannot fetch "
-                "real-time information or cite a training cutoff. For any question about "
-                "current events, news, dates, recent releases, CVEs, writeups, or tool "
-                "docs, CALL web_search first. "
+                "The server preloads web_search results for every non-social CTF turn. "
+                "Use those current results when relevant, and do NOT claim you cannot fetch "
+                "real-time information or cite a training cutoff. If you need a narrower "
+                "follow-up search for current events, news, dates, recent releases, CVEs, "
+                "writeups, or tool docs, CALL web_search again. "
                 "Call ctf_agent_command whenever the student wants a ready-to-run CTF-Agent command."
             )
         return (
@@ -871,6 +880,34 @@ def _tool_hint_for_mode(mode_id: str, tools: list[dict]) -> str:
     return _lecture_tool_hint()
 
 
+def _tool_names(tools: list[dict]) -> set[str]:
+    return {
+        str((tool.get("function") or {}).get("name") or "")
+        for tool in tools
+    }
+
+
+def _persistent_web_search_context(
+    *,
+    student_message: str,
+    active_mode: str,
+    tools: list[dict],
+) -> tuple[str, list[str]]:
+    if not _is_ctf_mode(active_mode) or "web_search" not in _tool_names(tools):
+        return "", []
+
+    content, sources_used = _run_web_search(student_message, max_results=5)
+    context = (
+        "Persistent CTF web_search results for this turn "
+        "(server-preloaded before answering):\n"
+        f"{content}\n"
+        "Use these results when relevant. If the student needs current information "
+        "and results are empty, explain that live search returned no usable results "
+        "or needs admin attention. Call web_search again only for a narrower follow-up query."
+    )
+    return context, sources_used
+
+
 def _generate_response_with_tools(
     *,
     student_message: str,
@@ -880,6 +917,15 @@ def _generate_response_with_tools(
 ) -> tuple[str, list[str], str]:
     tools = _tools_for_mode(session, active_mode, apply_wrongness)
     tool_hint = _tool_hint_for_mode(active_mode, tools)
+    sources_used: list[str] = []
+    persistent_context, persistent_sources = _persistent_web_search_context(
+        student_message=student_message,
+        active_mode=active_mode,
+        tools=tools,
+    )
+    if persistent_context:
+        tool_hint = f"{tool_hint}\n\n{persistent_context}" if tool_hint else persistent_context
+        sources_used.extend(persistent_sources)
     messages = professor.build_messages(
         student_message=student_message,
         mode_id=active_mode,
@@ -890,7 +936,6 @@ def _generate_response_with_tools(
         lecture_tool_hint=tool_hint,
     )
     system_prompt = messages[0]["content"] if messages else ""
-    sources_used: list[str] = []
     last_content = ""
 
     if not tools:
@@ -918,7 +963,7 @@ def _generate_response_with_tools(
         tool_calls = assistant_message.get("tool_calls") or []
         if not tool_calls:
             if last_content:
-                return last_content, sources_used, system_prompt
+                return last_content, list(dict.fromkeys(sources_used)), system_prompt
             return "⚠️ I couldn't finish that answer. Please ask again.", sources_used, system_prompt
 
         executed_any = False
@@ -931,7 +976,7 @@ def _generate_response_with_tools(
         if not executed_any:
             break
 
-    return last_content or "⚠️ I had trouble pulling up the lecture material. Please try again.", list(dict.fromkeys(sources_used)), system_prompt
+    return last_content or _tool_loop_fallback(active_mode), list(dict.fromkeys(sources_used)), system_prompt
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
@@ -1065,6 +1110,14 @@ async def chat_stream(req: ChatRequest, request: Request):
                         yield _sse({"token": token})
                 else:
                     tool_hint = _tool_hint_for_mode(active_mode, tools)
+                    persistent_context, persistent_sources = _persistent_web_search_context(
+                        student_message=req.message,
+                        active_mode=active_mode,
+                        tools=tools,
+                    )
+                    if persistent_context:
+                        tool_hint = f"{tool_hint}\n\n{persistent_context}" if tool_hint else persistent_context
+                        sources_used.extend(persistent_sources)
                     messages = professor.build_messages(
                         student_message=req.message,
                         mode_id=active_mode,
@@ -1121,7 +1174,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                             break
                     else:
                         if not response_parts:
-                            fallback = "⚠️ I had trouble pulling up the lecture material. Please try again."
+                            fallback = _tool_loop_fallback(active_mode)
                             response_parts.append(fallback)
                             yield _sse({"token": fallback})
         except BackendError as exc:

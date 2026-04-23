@@ -96,6 +96,7 @@ OLLAMA_WEB_SEARCH_BASE_URL=https://ollama.com
 
 `OLLAMA_BASE_URL` is still only for chat/model endpoints such as `/api/chat`; web search calls `https://ollama.com/api/web_search` directly.
 Keys saved through the admin page are persisted in `data/admin_runtime.json`.
+When CTF Mode has web search configured, Professor Tux preloads a web search for every non-social CTF turn and still lets the model call `web_search` again for narrower follow-up queries.
 
 ## Run the app
 
