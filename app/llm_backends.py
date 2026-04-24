@@ -120,6 +120,131 @@ def _format_bytes(size_bytes: int | float | None) -> str:
     return f"{value:.1f} {unit}"
 
 
+_TOOL_NAME_KEYS = ("name", "tool", "tool_name", "action", "function")
+_TOOL_ARG_KEYS = ("arguments", "args", "parameters", "tool_input", "input")
+_SINGLE_ARG_FALLBACK_KEYS = ("query", "q", "text", "prompt")
+
+
+def _extract_json_objects(text: str) -> list[str]:
+    """Return substrings of `text` that are balanced top-level JSON objects."""
+    results: list[str] = []
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    results.append(text[start : i + 1])
+                    start = -1
+    return results
+
+
+def _tool_names_from_schemas(tools: list[dict] | None) -> set[str]:
+    names: set[str] = set()
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function") or {}
+        name = function.get("name") if isinstance(function, dict) else None
+        if isinstance(name, str) and name.strip():
+            names.add(name.strip())
+    return names
+
+
+def _coerce_text_tool_call(
+    content: str,
+    allowed_names: set[str],
+) -> tuple[str, list[dict]]:
+    """Detect a pseudo tool-call JSON blob in `content` and convert to Ollama's
+    standard tool_calls shape. Returns (stripped_content, tool_calls).
+
+    Only blobs whose name field matches `allowed_names` are recognized — this
+    prevents stray JSON in the reply from being mistaken for a tool invocation.
+    """
+    if not allowed_names or not isinstance(content, str) or not content.strip():
+        return content, []
+
+    stripped = content.strip()
+    if stripped.startswith("```"):
+        newline = stripped.find("\n")
+        if newline != -1:
+            stripped = stripped[newline + 1 :]
+        if stripped.endswith("```"):
+            stripped = stripped[:-3]
+        stripped = stripped.strip()
+
+    candidates = _extract_json_objects(stripped)
+    if not candidates:
+        return content, []
+
+    for candidate in candidates:
+        try:
+            obj = json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+
+        name = ""
+        for key in _TOOL_NAME_KEYS:
+            value = obj.get(key)
+            if isinstance(value, str) and value.strip():
+                name = value.strip()
+                break
+            if isinstance(value, dict):
+                inner = value.get("name")
+                if isinstance(inner, str) and inner.strip():
+                    name = inner.strip()
+                    break
+        if not name or name not in allowed_names:
+            continue
+
+        arguments: dict = {}
+        for key in _TOOL_ARG_KEYS:
+            value = obj.get(key)
+            if isinstance(value, dict):
+                arguments = value
+                break
+            if isinstance(value, str) and value.strip():
+                arguments = {"query": value.strip()}
+                break
+        if not arguments:
+            for key in _SINGLE_ARG_FALLBACK_KEYS:
+                value = obj.get(key)
+                if isinstance(value, str) and value.strip():
+                    arguments = {"query": value.strip()}
+                    break
+
+        tool_call = {
+            "function": {
+                "name": name,
+                "arguments": arguments,
+            }
+        }
+        remaining = stripped.replace(candidate, "", 1).strip()
+        return remaining, [tool_call]
+
+    return content, []
+
+
 def _normalize_content(content) -> str:
     if isinstance(content, str):
         return content
@@ -586,13 +711,42 @@ class OllamaBackend(ModelBackend):
     ) -> Iterable[dict]:
         if self.provider_id == "ollama":
             self.ensure_server_running()
+        if tools:
+            # Remote/cloud Ollama endpoints can drop `tool_calls` in streamed
+            # chunks, causing tool invocations to leak as raw text. Fall back
+            # to a single non-streamed request whenever tools are in play.
+            data = self.chat(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                tools=tools,
+            )
+            message = data.get("message") or {}
+            if message:
+                message["content"] = _normalize_content(message.get("content"))
+                if not message.get("tool_calls"):
+                    stripped, recovered = _coerce_text_tool_call(
+                        message.get("content") or "",
+                        _tool_names_from_schemas(tools),
+                    )
+                    if recovered:
+                        message["content"] = stripped
+                        message["tool_calls"] = recovered
+            yield {
+                "model": data.get("model", model),
+                "message": message,
+                "done": True,
+                "done_reason": data.get("done_reason", "stop"),
+            }
+            return
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
             "think": False,
             "keep_alive": self._keep_alive,
-            "tools": tools or [],
+            "tools": [],
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
