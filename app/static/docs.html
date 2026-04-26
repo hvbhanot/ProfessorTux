@@ -1209,7 +1209,7 @@ inside this mode.</code></pre></div>
               <tr><td><code>id</code></td><td>Yes</td><td>Unique slug. Used in the API and to match the special-case rules in <code>professor.py</code> (see Reserved IDs).</td></tr>
               <tr><td><code>name</code></td><td>Yes</td><td>Display label on the admin mode card and the student-page mode pill.</td></tr>
               <tr><td><code>icon</code></td><td>No</td><td>Single emoji rendered inside the mode card.</td></tr>
-              <tr><td><code>color</code></td><td>No</td><td>Hex string in quotes (e.g. <code>"#facc15"</code>). Drives the admin card glow/border; feeds the student-page theme if you wire it up (see below).</td></tr>
+              <tr><td><code>color</code></td><td>No</td><td>Hex string in quotes (e.g. <code>"#facc15"</code>). Drives the admin card glow/border <em>and</em> the entire student-page palette automatically — accent, surface, border, and text vars are derived via CSS <code>color-mix()</code>. No CSS edits needed.</td></tr>
               <tr><td><code>description</code></td><td>No</td><td>One-sentence subtitle shown under the name on the admin card.</td></tr>
               <tr><td><code>hint_message</code></td><td>No</td><td>Appended below each model response on the student page. Leave blank for none.</td></tr>
               <tr><td><code>student_message</code></td><td>No</td><td>Empty-state intro copy shown on the student page before the first question. Falls back to <code>description</code>, then to a generic placeholder.</td></tr>
