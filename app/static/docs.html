@@ -1186,6 +1186,31 @@ flowchart TD
 ├── custom.md
 └── README.md</code></pre></div>
 
+        <h3>Adding a new mode (step by step)</h3>
+        <ol>
+          <li>
+            <strong>Create the file.</strong> Inside <code>app/modes/</code>, create a new file named after your mode id, e.g. <code>study_buddy.md</code>. The filename matters only for ordering on disk; the <code>id</code> field inside the frontmatter is what the system uses.
+          </li>
+          <li>
+            <strong>Paste the minimal template</strong> (see <a href="#modes">below</a>) and edit the values. The required fields are <code>id</code> and <code>name</code>; everything else is optional but you should fill at least <code>color</code>, <code>description</code>, and the four <code>student_*</code> fields so the student page reads nicely.
+          </li>
+          <li>
+            <strong>Pick a unique id.</strong> Lowercase, no spaces (use underscores). Avoid the reserved patterns in the table below (<code>recall</code>, <code>recall_*</code>, <code>guided</code>, <code>guided_*</code>, <code>*_wrong</code>, <code>ctf</code>, <code>custom</code>) unless you actually want their special behaviour. A duplicate id is rejected at load with a warning in the server log.
+          </li>
+          <li>
+            <strong>Pick a hex color.</strong> The whole student page is themed from this single value via CSS <code>color-mix()</code> — pick something distinct from existing modes so students can tell them apart. The admin card glow and the student-page accent both come from this field automatically.
+          </li>
+          <li>
+            <strong>Write the body.</strong> A one-line statement of the teaching style, then a bulleted rule list (kept short — see the 500-char cap below). Add an optional <code>## Examples</code> block for few-shot turns and an optional <code>## Suggestions</code> block for the four starter cards on the student empty state.
+          </li>
+          <li>
+            <strong>Save the file.</strong> No restart needed — <code>GET /modes</code> re-scans the directory on every call. Refresh the admin tab and the new card appears with the correct icon, color, and description. Click <em>Reload Modes</em> only if you need the toast confirmation or if you also want to update an open student tab.
+          </li>
+          <li>
+            <strong>Pick the new mode in admin.</strong> The student page reads the active mode from admin config; selecting your new mode there switches all student sessions to it on the next request.
+          </li>
+        </ol>
+
         <h3>File layout</h3>
         <div class="code-block"><pre><code>---
 id: my_mode
