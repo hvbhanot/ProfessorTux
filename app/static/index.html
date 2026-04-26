@@ -17,49 +17,21 @@
   --chat-width:min(880px, calc(100vw - 32px));
 }
 
-body.theme-recall{
-  --bg:#0b0f0c;
-  --surface:#111713;
-  --surface-2:#171f1a;
-  --surface-3:#0f1511;
-  --border:#27352c;
-  --border-strong:#3d5f49;
+/* Neutral default palette. Each mode's frontmatter color overrides --accent and
+   the --bg / --surface / --border / --text family via applyModeAccent() below. */
+body{
+  --bg:#0b0d10;
+  --surface:#13161b;
+  --surface-2:#1a1e25;
+  --surface-3:#0f1218;
+  --border:#252a33;
+  --border-strong:#3a4150;
   --accent:#58ff93;
   --accent-soft:rgba(88,255,147,0.12);
   --accent-glow:rgba(88,255,147,0.14);
   --text:#edf3ee;
   --text-soft:#b8c2bb;
   --text-muted:#7d8981;
-}
-
-body.theme-guided{
-  --bg:#111315;
-  --surface:#1a1d21;
-  --surface-2:#22272c;
-  --surface-3:#16191d;
-  --border:#30363d;
-  --border-strong:#47515b;
-  --accent:#f4f7fb;
-  --accent-soft:rgba(244,247,251,0.12);
-  --accent-glow:rgba(244,247,251,0.12);
-  --text:#f5f7fa;
-  --text-soft:#c3cad3;
-  --text-muted:#8d96a2;
-}
-
-body.theme-ctf{
-  --bg:#100707;
-  --surface:#1a0c0c;
-  --surface-2:#22100f;
-  --surface-3:#150a0a;
-  --border:#3a1d1f;
-  --border-strong:#6b2a30;
-  --accent:#ff2a44;
-  --accent-soft:rgba(255,42,68,0.14);
-  --accent-glow:rgba(255,42,68,0.18);
-  --text:#f6ecee;
-  --text-soft:#d6bcbf;
-  --text-muted:#9c7a7e;
 }
 
 *,
@@ -781,7 +753,7 @@ button,input,textarea{font:inherit}
 }
 </style>
 </head>
-<body class="theme-recall">
+<body>
 <div class="app">
   <header class="header">
     <div class="brand">
@@ -839,69 +811,12 @@ button,input,textarea{font:inherit}
 <script>
 const API = location.origin;
 
-const SUGGESTIONS = [
-  {
-    title: "Web Security",
-    recall: "Give me one quick hint on how XSS differs from CSRF.",
-    guided: "Teach me the main web application vulnerabilities with examples.",
-    ctf: "I have a web CTF box at http://target:8080 — walk me through the first recon steps."
-  },
-  {
-    title: "Cryptography",
-    recall: "Give me one recall cue on hashing vs encryption.",
-    guided: "Teach me cryptography fundamentals from first principles.",
-    ctf: "The challenge gives me a weak RSA public key and a ciphertext — what attacks should I try first?"
-  },
-  {
-    title: "Binary / Pwn",
-    recall: "Give me a one-line nudge on IDS vs IPS.",
-    guided: "Walk me through network defense fundamentals step by step.",
-    ctf: "I have a 64-bit SUID binary with a stack buffer overflow and NX enabled. Plan the exploit."
-  },
-  {
-    title: "Agent Handoff",
-    recall: "Remind me of the first incident response phase without giving the full sequence.",
-    guided: "Walk me through the incident response lifecycle.",
-    ctf: "Generate a CTF-Agent command for a web challenge called 'robots' at http://target.ctf:8080 — find the hidden admin panel."
-  }
-];
-
-const MODE_UI = {
-  recall: {
-    label: "Recall Mode",
-    title: "Get a quick recall nudge",
-    copy: "Recall Mode is for use during an exam: brief factual cues, one small hint at a time, and no long explanations.",
-    composerPlaceholder: "e.g. Give me one quick hint on TLS handshake steps...",
-    subtitle: "Recall mode for in-exam use"
-  },
-  guided: {
-    label: "Guided Learning",
-    title: "Ask for explanation or walkthroughs",
-    copy: "Professor Tux is tuned for teaching, examples, hints, and step-by-step cybersecurity explanations.",
-    composerPlaceholder: "Ask Professor Tux to teach, explain, or walk through a topic...",
-    subtitle: "Guided chat"
-  },
-  recall_wrong: {
-    label: "Recall Mode",
-    title: "Get a quick recall nudge",
-    copy: "Recall Mode is for use during an exam: brief factual cues, one small hint at a time, and no long explanations.",
-    composerPlaceholder: "e.g. Give me one quick hint on TLS handshake steps...",
-    subtitle: "Recall mode for in-exam use"
-  },
-  guided_wrong: {
-    label: "Guided Learning",
-    title: "Ask for explanation or walkthroughs",
-    copy: "Professor Tux is tuned for teaching, examples, hints, and step-by-step cybersecurity explanations.",
-    composerPlaceholder: "Ask Professor Tux to teach, explain, or walk through a topic...",
-    subtitle: "Guided chat"
-  },
-  ctf: {
-    label: "CTF Mode",
-    title: "Crack the challenge",
-    copy: "CTF Mode can use live web search when configured and can build a CTF-Agent command for you. Drop a target, category, and objective.",
-    composerPlaceholder: "e.g. I have a web box at http://target:8080 — enumerate it.",
-    subtitle: "CTF-first — web search + Agent commands"
-  }
+// Generic fallbacks used only when a mode's frontmatter omits a field.
+const FALLBACK_MODE_UI = {
+  title: "Ask Professor Tux",
+  copy: "Ask any cybersecurity question.",
+  composerPlaceholder: "Ask any cybersecurity question...",
+  subtitle: "Cybersecurity teaching assistant"
 };
 
 const state = {
@@ -955,25 +870,32 @@ function showToast(text) {
   }, 2600);
 }
 
-function modeFamily(modeId) {
-  const normalized = String(modeId || "").toLowerCase();
-  if (normalized === "ctf" || normalized.indexOf("ctf") === 0) return "ctf";
-  if (normalized.indexOf("guided") === 0) return "guided";
-  return "recall";
-}
-
-function isWrongMode(modeId) {
-  return String(modeId || "").toLowerCase().endsWith("_wrong");
+function modeMeta(modeInfo) {
+  const info = modeInfo || {};
+  const description = info.description ? String(info.description).trim() : "";
+  return {
+    label: info.name || "Mode",
+    title: (info.student_title || "").trim() || FALLBACK_MODE_UI.title,
+    copy: (info.student_message || "").trim() || description || FALLBACK_MODE_UI.copy,
+    composerPlaceholder: (info.student_placeholder || "").trim() || FALLBACK_MODE_UI.composerPlaceholder,
+    subtitle: (info.student_subtitle || "").trim() || info.name || FALLBACK_MODE_UI.subtitle
+  };
 }
 
 function renderSuggestions() {
   const container = document.getElementById("suggestions");
-  const family = modeFamily(state.mode);
-  container.innerHTML = SUGGESTIONS.map(function(item) {
-    const prompt = item[state.mode] || item[family] || item.recall;
+  const modeInfo = state.modesMap[state.mode] || {};
+  const items = Array.isArray(modeInfo.suggestions) ? modeInfo.suggestions : [];
+  if (!items.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = items.map(function(item) {
+    const prompt = String(item.prompt || "");
+    const title = String(item.title || "");
     return [
       '<button class="suggestion" type="button" data-prompt="' + escapeAttribute(prompt) + '">',
-      '<span class="suggestion-title">' + escapeHtml(item.title) + "</span>",
+      '<span class="suggestion-title">' + escapeHtml(title) + "</span>",
       '<span class="suggestion-copy">' + escapeHtml(prompt) + "</span>",
       "</button>"
     ].join("");
@@ -985,22 +907,45 @@ function updateIntroVisibility() {
 }
 
 function updateModeUI() {
-  document.body.classList.remove("theme-recall", "theme-guided", "theme-ctf");
-  const family = modeFamily(state.mode);
-  document.body.classList.add("theme-" + family);
-
-  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
   const modeInfo = state.modesMap[state.mode] || {};
-  const label = isWrongMode(state.mode) ? meta.label : (modeInfo.name || meta.label);
+  const meta = modeMeta(modeInfo);
 
-  document.getElementById("modePill").textContent = label;
-  document.getElementById("emptyEyebrow").textContent = label;
+  applyModeAccent(modeInfo.color);
+
+  document.getElementById("modePill").textContent = meta.label;
+  document.getElementById("emptyEyebrow").textContent = meta.label;
   document.getElementById("emptyTitle").textContent = meta.title;
   document.getElementById("emptyCopy").textContent = meta.copy;
   document.getElementById("chatInput").placeholder = state.modelLoaded ? meta.composerPlaceholder : "Waiting for the teaching engine...";
 
   renderSuggestions();
   updateBrandSubtitle();
+}
+
+function applyModeAccent(color) {
+  const body = document.body;
+  const props = [
+    "--accent", "--accent-soft", "--accent-glow",
+    "--bg", "--surface", "--surface-2", "--surface-3",
+    "--border", "--border-strong",
+    "--text", "--text-soft", "--text-muted"
+  ];
+  if (color && /^#[0-9a-fA-F]{3,8}$/.test(color)) {
+    body.style.setProperty("--accent", color);
+    body.style.setProperty("--accent-soft", "color-mix(in srgb, " + color + " 12%, transparent)");
+    body.style.setProperty("--accent-glow", "color-mix(in srgb, " + color + " 16%, transparent)");
+    body.style.setProperty("--bg",        "color-mix(in srgb, " + color + " 6%,  #08090b)");
+    body.style.setProperty("--surface",   "color-mix(in srgb, " + color + " 8%,  #11141a)");
+    body.style.setProperty("--surface-2", "color-mix(in srgb, " + color + " 10%, #181c23)");
+    body.style.setProperty("--surface-3", "color-mix(in srgb, " + color + " 6%,  #0d1015)");
+    body.style.setProperty("--border",        "color-mix(in srgb, " + color + " 18%, #232733)");
+    body.style.setProperty("--border-strong", "color-mix(in srgb, " + color + " 38%, #3a4150)");
+    body.style.setProperty("--text",       "color-mix(in srgb, " + color + " 6%,  #f1f3f7)");
+    body.style.setProperty("--text-soft",  "color-mix(in srgb, " + color + " 12%, #b8c1cf)");
+    body.style.setProperty("--text-muted", "color-mix(in srgb, " + color + " 14%, #7f899a)");
+  } else {
+    props.forEach(function(p) { body.style.removeProperty(p); });
+  }
 }
 
 function updateScopeUI() {
@@ -1012,10 +957,9 @@ function updateScopeUI() {
 
 function updateBrandSubtitle() {
   const parts = [];
-  const family = modeFamily(state.mode);
-  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
-  const familyFallback = family === "recall" ? "Recall mode for in-exam use" : (family === "ctf" ? "CTF mode — web search + Agent commands" : "Guided chat");
-  parts.push(meta.subtitle || familyFallback);
+  const modeInfo = state.modesMap[state.mode] || {};
+  const meta = modeMeta(modeInfo);
+  parts.push(meta.subtitle);
   if (state.adminConfig.topic) parts.push(state.adminConfig.topic);
   if (state.adminConfig.courseFilter) parts.push(state.adminConfig.courseFilter);
   if (!state.adminConfig.topic && !state.adminConfig.courseFilter) parts.push("All cybersecurity topics");
@@ -1026,8 +970,8 @@ function setComposerReady(isReady) {
   const card = document.getElementById("composerCard");
   const input = document.getElementById("chatInput");
   const sendBtn = document.getElementById("sendBtn");
-  const family = modeFamily(state.mode);
-  const meta = MODE_UI[state.mode] || MODE_UI[family] || MODE_UI.recall;
+  const modeInfo = state.modesMap[state.mode] || {};
+  const meta = modeMeta(modeInfo);
 
   card.classList.toggle("is-disabled", !isReady);
   input.disabled = !isReady || state.isGenerating;

@@ -1,196 +1,132 @@
-# 🐧 Professor Tux — Cybersecurity Teaching Assistant
+# How to write a teaching mode
 
-AI-powered cybersecurity teaching assistant with **pluggable teaching modes**, **lecture slide RAG**, and a split **student/admin** web interface.
+A mode is a single Markdown file in this directory. Drop a new `.md` file here, restart the server (or hit `POST /modes/reload` from the admin panel), and the mode appears in the admin panel and in `/modes`.
 
-## Architecture
+Loader: `app/mode_loader.py`. Prompt assembly: `ProfessorTux.build_messages` in `app/professor.py`.
 
-```
-professor_tux/
-├── app/
-│   ├── main.py              # FastAPI routes, admin auth, all endpoints
-│   ├── professor.py         # Prompt builder + backend orchestration
-│   ├── llm_backends.py      # Ollama + cloud backend adapters
-│   ├── mode_loader.py        # Auto-discovers teaching modes from .md files
-│   ├── models.py             # Pydantic request/response schemas
-│   ├── sessions.py           # In-memory session manager
-│   ├── rag.py                # RAG pipeline (extract → chunk → embed → retrieve)
-│   ├── modes/                # ← TEACHING MODES (skill files)
-│   │   ├── README.md         # How to create new modes
-│   │   ├── recall.md         # 🧠 Socratic recall mode
-│   │   └── guided.md         # 📖 Guided learning mode
-│   └── static/
-│       ├── index.html        # Student chat interface
-│       ├── admin.html        # Admin panel (login-protected)
-│       └── logo.png          # Professor Tux logo
-├── run.py                    # Entry point
-├── client.py                 # CLI test client
-├── requirements.txt
-├── Dockerfile
-└── .env.example
-```
+> ⚠️ **Do not delete the six built-in modes** (`recall.md`, `recall_wrong.md`, `guided.md`, `guided_wrong.md`, `ctf.md`, `custom.md`). Their ids are wired into special-case logic in `app/professor.py` (recall hard rules, CTF override, wrong-turn rules, custom-mode persona bypass) and into the admin confirmation modals. You can freely **add** new mode files alongside them, and freely **delete or edit** any modes you yourself add — but removing the originals will leave dead references in the codebase.
 
-## Quick Start
-
-```bash
-# 1. Clone & install
-pip install -r requirements.txt
-
-# 2. Start Ollama and pull a model
-ollama serve
-ollama pull qwen3.5:4b
-
-# 3. Configure
-cp .env.example .env
-# Edit .env → set OLLAMA_MODEL or optional cloud settings
-
-# 4. Run
-python run.py
-```
-
-- **Student chat**: http://localhost:8000
-- **Admin panel**: http://localhost:8000/admin (default: `admin` / `professortux`)
-- **Product docs**: http://localhost:8000/docs
-- **API docs**: http://localhost:8000/api/docs
-
-## Pluggable Teaching Modes
-
-Modes are defined as `.md` files in `app/modes/`. Each file uses a **frontmatter + body** structure (inspired by Anthropic's SKILL.md pattern). They are auto-discovered at startup.
-
-### Creating a New Mode
-
-Create `app/modes/challenge.md`:
+## File layout
 
 ```markdown
 ---
-id: challenge
-name: CTF Challenge
-icon: 🏁
-color: "#ff6b6b"
-description: Capture-the-flag style puzzles and challenges.
-hint_message: 🏁 Think like a hacker!
+id: my_mode
+name: My Mode
+icon: 🎯
+color: "#22d3ee"
+description: One-line summary shown in the admin mode card.
+hint_message: Optional reminder shown to the student after each response.
 ---
 
-You are in **CTF Challenge Mode**. Present the student with
-capture-the-flag style cybersecurity challenges.
-
-## Rules
-1. Present a scenario or puzzle
-2. Give encoded clues the student must decode
-3. Validate their answers step by step
-4. Award "flags" for correct solutions
+System prompt body goes here. This is what shapes the model's behaviour
+inside this mode. See "What the body should contain" below.
 ```
 
-That's it — restart the server (or hit `POST /modes/reload` from admin) and the new mode appears in both the admin panel and API.
+## Frontmatter fields
 
-### Mode File Format
+| Field | Required | Notes |
+|-------|----------|-------|
+| `id` | yes | Unique slug. Used in the API, in URL params, and to match the special-case rules in `professor.py` (see "Reserved IDs"). |
+| `name` | yes | Display label. Shown on the admin mode card and the student-page mode pill. |
+| `icon` |  | Single emoji. Renders inside the mode card. |
+| `color` |  | Hex string in quotes (e.g. `"#facc15"`). Drives the admin card glow/border and is meant to feed the student-page theme — see "Wiring the student page". |
+| `description` |  | One sentence shown under the name in the admin card. |
+| `hint_message` |  | Appended below each model response on the student page. Leave blank for none. |
+| `student_message` |  | Empty-state intro copy shown on the student page before the first question. Falls back to `description`, then to a generic placeholder. |
+| `student_title` |  | Headline shown above the empty-state copy (e.g. "Ask for explanation or walkthroughs"). Falls back to a generic "Ask Professor Tux". |
+| `student_placeholder` |  | Placeholder text inside the chat input box. Falls back to a generic "Ask any cybersecurity question…". |
+| `student_subtitle` |  | Tag-line shown after "Professor Tux" in the page header. Falls back to the mode `name`. |
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | ✅ | Unique identifier (used in API) |
-| `name` | ✅ | Display name |
-| `icon` | | Emoji icon |
-| `color` | | Hex color for UI badges/cards |
-| `description` | | Short description for admin panel |
-| `hint_message` | | Shown after each response (empty = none) |
-| **Body** | ✅ | Full system prompt injected into the LLM |
+The frontmatter parser is intentionally minimal (`_parse_frontmatter` in `mode_loader.py`): one `key: value` per line, quotes stripped, no nested YAML. Don't use multi-line strings.
 
-### Built-in Modes
+## What the body should contain
 
-| Mode | Description |
-|------|-------------|
-| 🧠 **recall** | Socratic method — hints and questions, student must retrieve answers |
-| 📖 **guided** | Full explanations with examples and comprehension checks |
+The body is appended to the base persona as `"You are in {name}. {body}"` for every non-custom mode. Keep it short and behavioural:
 
-### Mode Ideas
+- A one-line statement of what this mode does.
+- A bulleted list of rules ("be concise", "use tables when comparing", "stay on cybersecurity").
+- Optional `## Examples` block with `**Student:** … / **Response:** …` pairs separated by `---`. These become few-shot turns prepended to the conversation — useful for small models that imitate better than they instruction-follow.
+- Optional `## Suggestions` block (parsed and stripped from the system prompt) for the four starter cards on the student empty state. One bullet per card:
 
-- `challenge.md` — CTF puzzles
-- `exam_prep.md` — Practice exam questions with grading
-- `lab.md` — Hands-on tool walkthroughs (nmap, Wireshark, etc.)
-- `debate.md` — Security tradeoff debates
-- `incident_response.md` — IR scenario simulations
-- `red_team.md` — Offensive mindset training
-- `blue_team.md` — Defensive analysis focus
+  ```markdown
+  ## Suggestions
 
-## API Endpoints
+  - **Web Security:** Teach me the main web application vulnerabilities with examples.
+  - **Cryptography:** Explain hashing vs encryption.
+  - **Binary / Pwn:** Walk me through network defense fundamentals step by step.
+  - **Agent Handoff:** Walk me through the incident response lifecycle.
+  ```
 
-### System
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Server status, loaded modes, chunk count |
+  Each line is `- **{card title}:** {prompt sent when the card is clicked}`. Up to four are typically shown; if the block is missing the empty state simply hides the suggestion grid.
 
-### Modes
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/modes` | List all available teaching modes |
-| `POST` | `/modes/reload` | Hot-reload modes from disk (admin auth) |
+### The 500-character rule cap
 
-### Sessions
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/sessions` | Create a session (specify mode, topic, etc.) |
-| `GET` | `/sessions/{id}` | Get session history |
-| `PATCH` | `/sessions/{id}/mode?mode=X` | Switch mode mid-session |
+`_split_mode_prompt` joins all rule lines with single spaces and truncates at ~500 chars before injection. Long rule lists get cut off mid-sentence. To stay safe:
 
-### Chat
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/chat` | Send a message, get a response |
+- Put your most important rules first.
+- Keep each bullet under ~100 chars.
+- If a rule is long, restate the gist tersely (e.g. "Use a compact Markdown table when comparing items (2-4 cols)" instead of a 300-char explanation).
 
-### Lectures (RAG)
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/lectures/upload` | Upload a PDF/PPTX/TXT/MD |
-| `GET` | `/lectures` | List all uploaded documents |
-| `DELETE` | `/lectures/{doc_id}` | Delete a document |
-| `POST` | `/lectures/search` | Semantic search across slides |
-| `GET` | `/lectures/stats/overview` | RAG pipeline stats |
+Examples (`## Examples` section) are not subject to the cap — they're parsed separately and emitted as message turns.
 
-### Admin
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/admin/login` | Authenticate |
-| `GET` | `/admin/verify` | Verify token |
-| `GET` | `/admin/config` | Get admin config (auth required) |
-| `PUT` | `/admin/config` | Update config (auth required) |
-| `GET` | `/admin/config/public` | Public config (student page reads this) |
+## Reserved IDs
 
-## Admin Panel
+These IDs trigger extra logic in `app/professor.py` on top of your body:
 
-The admin panel at `/admin` provides:
+| ID pattern | Extra behaviour |
+|------------|-----------------|
+| `recall`, `recall_*` | Adds `RECALL_MODE_HARD_RULES`. If the student's message looks like an MCQ, also adds `RECALL_MODE_MCQ_RULES`. Caps `max_tokens` at 96. |
+| `*_wrong` | When the wrong-turn flag is set on a request, adds `WRONG_TURN_HARD_RULES` plus the recall- or guided-flavour wrong-turn rules. Bumps temperature to ≥1.05. |
+| `ctf` | Adds `CTF_MODE_HARD_RULES` (lifts the "no exploit code" rule, enables `web_search` preloading + `ctf_agent_command`). Admin shows a confirmation modal before activating. |
+| `custom` | **Skips the base persona, the mode marker line, all overrides, and few-shot examples.** Only topic / lecture context (if set) and the conversation history reach the model. Admin shows a confirmation modal. |
 
-- **Mode selection** — dynamically rendered from discovered `.md` files
-- **Hot reload** — reload modes without restarting the server
-- **Session config** — set default topic, course filter, enable/disable RAG
-- **Lecture management** — drag-drop upload, file table, delete
-- **Stats dashboard** — server status, document count, chunk count
+If your new mode's id matches one of these patterns, you inherit the extra rules — pick a fresh slug if you don't want them.
 
-Changes made in admin are immediately reflected for new student sessions.
+## Student-page wiring
 
-## RAG Pipeline
+Everything student-facing for a mode lives in this `.md` file — the student page reads it from the `/modes` API. Specifically:
 
-1. **Upload** → PDF/PPTX/TXT/MD via admin panel or API
-2. **Extract** → PyMuPDF (PDF), python-pptx (PPTX incl. speaker notes & tables)
-3. **Chunk** → 500-char chunks with 100-char overlap, sentence-boundary aware
-4. **Embed** → all-MiniLM-L6-v2 (384-dim, CPU-friendly)
-5. **Store** → ChromaDB (persisted to disk)
-6. **Retrieve** → Top-5 semantic search per query, injected into system prompt
-7. **Cite** → Sources shown as purple tags in the chat UI
+- The mode's `color` drives the entire student-page palette via `applyModeAccent()` in `index.html` (accent, surface, border, and text vars are derived from the hex via CSS `color-mix()`). No per-mode CSS class needed.
+- The four `student_*` frontmatter fields drive the mode pill, empty-state title, empty-state copy, composer placeholder, and brand subtitle. Generic fallbacks kick in for any field you leave blank.
+- The `## Suggestions` body block drives the four starter cards.
 
-## Environment Variables
+That means **deleting a `.md` file removes a mode cleanly with no leftover code in `index.html`**. Likewise, a brand-new `.md` file shows up fully styled with no JS or CSS edits.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server URL (local or remote) |
-| `OLLAMA_MODEL` | `qwen3.5:4b` | Default model target |
-| `MAX_TOKENS` | `1024` | Max response tokens |
-| `TEMPERATURE` | `0.7` | Sampling temperature |
-| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model |
-| `CHROMA_PERSIST_DIR` | `./data/chromadb` | Vector DB storage |
-| `UPLOAD_DIR` | `./data/uploads` | Uploaded files |
-| `CHUNK_SIZE` | `500` | Characters per chunk |
-| `CHUNK_OVERLAP` | `100` | Overlap between chunks |
-| `TOP_K_RESULTS` | `5` | Chunks retrieved per query |
-| `ADMIN_USERNAME` | `admin` | Admin login username |
-| `ADMIN_PASSWORD` | `professortux` | Admin login password |
-| `HOST` | `0.0.0.0` | Server host |
-| `PORT` | `8000` | Server port |
+## Reloading
+
+`GET /modes` re-scans this directory on every call, so dropping a new `.md` file is picked up the moment the admin page refreshes — no manual reload required.
+
+- `POST /modes/reload` (admin auth) is still available as an explicit force-refresh and is what the *↻ Reload Modes* button calls.
+- A full server restart also picks up changes.
+
+## Minimal template
+
+```markdown
+---
+id: example
+name: Example Mode
+icon: ✨
+color: "#a78bfa"
+description: One-sentence summary.
+hint_message:
+student_message: Short intro shown on the student empty state.
+student_title: Headline above the intro.
+student_placeholder: Placeholder text in the chat input.
+student_subtitle: Short tag-line in the page header.
+---
+
+## Suggestions
+
+- **Card one title:** Prompt sent when this card is clicked.
+- **Card two title:** Another starter prompt.
+- **Card three title:** And another.
+- **Card four title:** And the last one.
+
+State the teaching style in one line.
+
+- Rule one.
+- Rule two.
+- Stay strictly on cybersecurity and adjacent topics.
+```
+
+That's enough to register a working mode. Add `## Examples` blocks if the model needs imitation cues; otherwise leave the body lean.

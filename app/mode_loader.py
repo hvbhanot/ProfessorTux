@@ -20,6 +20,11 @@ class ModeDefinition:
     color: str = "#00e5ff"
     description: str = ""
     hint_message: str = ""
+    student_message: str = ""
+    student_title: str = ""
+    student_placeholder: str = ""
+    student_subtitle: str = ""
+    suggestions: list[dict] = field(default_factory=list)
     system_prompt: str = ""
     source_file: str = ""
 
@@ -31,6 +36,11 @@ class ModeDefinition:
             "color": self.color,
             "description": self.description,
             "hint_message": self.hint_message,
+            "student_message": self.student_message,
+            "student_title": self.student_title,
+            "student_placeholder": self.student_placeholder,
+            "student_subtitle": self.student_subtitle,
+            "suggestions": self.suggestions,
         }
 
 
@@ -58,6 +68,54 @@ def _parse_frontmatter(content: str) -> tuple[dict, str]:
     return frontmatter, body
 
 
+_SUGGESTIONS_HEADING = re.compile(r'^##\s+Suggestions\s*$', re.IGNORECASE)
+_SUGGESTION_LINE = re.compile(r'^\s*-\s*\*\*(?P<title>[^*]+?)\*\*\s*[:\-]?\s*(?P<prompt>.+?)\s*$')
+
+
+def _extract_suggestions(body: str) -> tuple[list[dict], str]:
+    """Pull a `## Suggestions` block out of the mode body.
+
+    Each line under the heading should look like:
+        - **Card title:** prompt text shown on the suggestion card.
+    The block is removed from the returned body so it doesn't leak into the
+    system prompt.
+    """
+    if not body:
+        return [], body
+
+    lines = body.split("\n")
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if _SUGGESTIONS_HEADING.match(line.strip()):
+            start = i
+            for j in range(i + 1, len(lines)):
+                stripped = lines[j].strip()
+                if stripped.startswith("## ") and not _SUGGESTIONS_HEADING.match(stripped):
+                    end = j
+                    break
+            else:
+                end = len(lines)
+            break
+
+    if start is None:
+        return [], body
+
+    block_lines = lines[start + 1:end]
+    suggestions: list[dict] = []
+    for raw in block_lines:
+        match = _SUGGESTION_LINE.match(raw)
+        if not match:
+            continue
+        suggestions.append({
+            "title": match.group("title").strip().rstrip(":").strip(),
+            "prompt": match.group("prompt").strip().strip('"'),
+        })
+
+    cleaned = "\n".join(lines[:start] + lines[end:]).strip()
+    return suggestions, cleaned
+
+
 class ModeLoader:
     def __init__(self, modes_dir: str | Path | None = None):
         self._modes_dir = Path(modes_dir) if modes_dir else MODES_DIR
@@ -72,23 +130,32 @@ class ModeLoader:
             logger.warning("Modes directory not found: %s", self._modes_dir)
             return 0
 
-        count = 0
+        seen_sources: dict[str, str] = {}
         for file_path in sorted(self._modes_dir.glob("*.md")):
             if file_path.name.lower() == "readme.md":
                 continue
 
             try:
                 mode = self._load_file(file_path)
-                if mode:
-                    self._modes[mode.id] = mode
-                    count += 1
-                    logger.info(
-                        "Loaded mode: %s (%s) from %s",
-                        mode.id, mode.name, file_path.name
+                if not mode:
+                    continue
+                if mode.id in seen_sources:
+                    logger.warning(
+                        "Duplicate mode id '%s' in %s — already registered from %s; skipping. "
+                        "Each .md file needs a unique 'id' in its frontmatter.",
+                        mode.id, file_path.name, seen_sources[mode.id],
                     )
+                    continue
+                self._modes[mode.id] = mode
+                seen_sources[mode.id] = file_path.name
+                logger.info(
+                    "Loaded mode: %s (%s) from %s",
+                    mode.id, mode.name, file_path.name
+                )
             except Exception as e:
                 logger.error("Failed to load mode from %s: %s", file_path.name, e)
 
+        count = len(self._modes)
         logger.info("Loaded %d teaching modes", count)
         return count
 
@@ -101,6 +168,8 @@ class ModeLoader:
             logger.warning("Skipping %s — missing 'id' in frontmatter", file_path.name)
             return None
 
+        suggestions, body_without_suggestions = _extract_suggestions(body)
+
         return ModeDefinition(
             id=mode_id,
             name=frontmatter.get("name", mode_id.title()),
@@ -108,7 +177,12 @@ class ModeLoader:
             color=frontmatter.get("color", "#00e5ff"),
             description=frontmatter.get("description", ""),
             hint_message=frontmatter.get("hint_message", ""),
-            system_prompt=body,
+            student_message=frontmatter.get("student_message", ""),
+            student_title=frontmatter.get("student_title", ""),
+            student_placeholder=frontmatter.get("student_placeholder", ""),
+            student_subtitle=frontmatter.get("student_subtitle", ""),
+            suggestions=suggestions,
+            system_prompt=body_without_suggestions,
             source_file=file_path.name,
         )
 

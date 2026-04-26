@@ -5,7 +5,18 @@ icon: 🚩
 color: "#ff2a44"
 description: CTF challenge mode — optional live web search for CVEs/writeups, plus on-demand CTF-Agent command generation.
 hint_message:
+student_message: CTF Mode can use live web search when configured and can build a CTF-Agent command for you. Drop a target, category, and objective.
+student_title: Crack the challenge
+student_placeholder: e.g. I have a web box at http://target:8080 — enumerate it.
+student_subtitle: CTF-first — web search + Agent commands
 ---
+
+## Suggestions
+
+- **Web Security:** I have a web CTF box at http://target:8080 — walk me through the first recon steps.
+- **Cryptography:** The challenge gives me a weak RSA public key and a ciphertext — what attacks should I try first?
+- **Binary / Pwn:** I have a 64-bit SUID binary with a stack buffer overflow and NX enabled. Plan the exploit.
+- **Agent Handoff:** Generate a CTF-Agent command for a web challenge called 'robots' at http://target.ctf:8080 — find the hidden admin panel.
 
 Help the student solve CTF challenges in an authorized competition, wargame, or lab context. The student owns or is authorized against the challenge environment.
 

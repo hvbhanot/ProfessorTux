@@ -1353,6 +1353,24 @@ body::before{
   </div>
 </div>
 
+<div class="modal-overlay" id="customModeModal">
+  <div class="modal-box" style="max-width:540px">
+    <div class="modal-head">
+      <div class="card-title">Custom Mode — guardrails come from the model</div>
+      <button class="reload-btn" onclick="closeCustomModal()">✕ Close</button>
+    </div>
+    <div style="font-size:12px;line-height:1.7;color:var(--text-secondary)">
+      Custom Mode sends <strong>no system prompt</strong> — no Professor Tux persona, no identity guard, no safety rules, no teaching style. The model receives only the conversation history and the student's message.
+      <div style="margin-top:14px">Whatever guardrails you need (refusing offensive use, hiding the underlying model name, scope to cybersecurity, output style) must be <strong>built into the model itself</strong> — either via fine-tuning, an Ollama <code style="background:var(--bg-terminal);border:1px solid var(--border);padding:1px 6px;color:var(--accent);font-family:var(--font-mono)">Modelfile</code> SYSTEM directive, or a model that already enforces them internally.</div>
+      <div style="margin-top:14px">Use this mode when you want to evaluate the raw model behaviour, or when the active model already carries its own teaching persona.</div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="reload-btn" onclick="closeCustomModal()" style="margin:0">Cancel</button>
+        <button class="save-btn" onclick="confirmCustomMode()" style="margin:0">Switch to Custom Mode</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="ctfModeModal">
   <div class="modal-box" style="max-width:540px">
     <div class="modal-head">
@@ -1386,6 +1404,7 @@ let allModes = []; // fetched from /modes
 let modelStatusPoller = null;
 let savedBaseUrl = '';
 let pendingCtfModeId = null;
+let pendingCustomModeId = null;
 let webSearchConfigured = false;
 let savedWebSearchBaseUrl = 'https://ollama.com';
 let webSearchApiKeySource = '';
@@ -1864,6 +1883,11 @@ function selectMode(id) {
     document.getElementById('ctfModeModal').classList.add('open');
     return;
   }
+  if (id === 'custom' && adminConfig.mode !== 'custom') {
+    pendingCustomModeId = id;
+    document.getElementById('customModeModal').classList.add('open');
+    return;
+  }
   applyMode(id);
 }
 
@@ -1893,6 +1917,18 @@ function confirmCtfMode() {
   var id = pendingCtfModeId;
   pendingCtfModeId = null;
   document.getElementById('ctfModeModal').classList.remove('open');
+  if (id) applyMode(id);
+}
+
+function closeCustomModal() {
+  pendingCustomModeId = null;
+  document.getElementById('customModeModal').classList.remove('open');
+}
+
+function confirmCustomMode() {
+  var id = pendingCustomModeId;
+  pendingCustomModeId = null;
+  document.getElementById('customModeModal').classList.remove('open');
   if (id) applyMode(id);
 }
 

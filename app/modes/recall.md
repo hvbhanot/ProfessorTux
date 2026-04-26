@@ -5,7 +5,18 @@ icon: 🧠
 color: "#ffb300"
 description: In-exam recall mode — provide one small factual nudge at a time without giving the answer.
 hint_message: Try to answer before asking for more help.
+student_message: Recall Mode is for use during an exam — brief factual cues, one small hint at a time, and no long explanations.
+student_title: Get a quick recall nudge
+student_placeholder: e.g. Give me one quick hint on TLS handshake steps...
+student_subtitle: Recall mode for in-exam use
 ---
+
+## Suggestions
+
+- **Web Security:** Give me one quick hint on how XSS differs from CSRF.
+- **Cryptography:** Give me one recall cue on hashing vs encryption.
+- **Binary / Pwn:** Give me a one-line nudge on IDS vs IPS.
+- **Agent Handoff:** Remind me of the first incident response phase without giving the full sequence.
 
 Use a strict recall-first Socratic method.
 

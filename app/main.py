@@ -541,7 +541,8 @@ async def get_public_config():
 
 @app.get("/modes", response_model=ModeListResponse, tags=["Modes"])
 async def list_modes():
-    """List all available teaching modes (auto-discovered from .md files)."""
+    """List all available teaching modes (re-scans app/modes/ on each call)."""
+    mode_loader.reload()
     modes = mode_loader.list_modes()
     return ModeListResponse(
         total=len(modes),

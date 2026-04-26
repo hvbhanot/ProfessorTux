@@ -640,7 +640,7 @@ tr:last-child td{
         <a class="quick-link" href="#student-usage">
           <div>
             <strong>Using the App</strong>
-            <small>Recall, Guided, uploads, and sessions</small>
+            <small>Recall, Guided, CTF, Custom, uploads, and sessions</small>
           </div>
           <span>→</span>
         </a>
@@ -834,7 +834,7 @@ sequenceDiagram
           </div>
           <div class="step">
             <strong>4. Set the default student mode intentionally</strong>
-            <p>Use <strong>Guided Learning</strong> if this is a teaching assistant. Use <strong>Recall</strong> only if the student needs tiny cues during an exam and should not receive direct answers.</p>
+            <p>Use <strong>Guided Learning</strong> if this is a teaching assistant. Use <strong>Recall</strong> only if the student needs tiny cues during an exam and should not receive direct answers. <strong>CTF</strong> is for authorized offensive practice; <strong>Custom</strong> sends no system prompt and should only be used when guardrails live inside the model itself.</p>
           </div>
           <div class="step">
             <strong>5. Upload course material if you want course-grounded teaching</strong>
@@ -1039,9 +1039,13 @@ flowchart TD
   Mode -->|CTF| CTFSearch["Optional Ollama<br/>web search"]
   CTFSearch --> CTFModel["Model returns<br/>recon / exploit guidance"]
 
+  Mode -->|Custom| Raw["No system prompt<br/>(model's own behaviour)"]
+  Raw --> CustomModel["Model answers directly"]
+
   GModel --> Log["Append turn to<br/>chat_logs.jsonl"]
   RModel --> Log
   CTFModel --> Log
+  CustomModel --> Log
           </div>
           <p class="diagram-caption">Each mode shapes prompt assembly and tool access differently, but every turn is appended to the chat log.</p>
         </div>
@@ -1068,6 +1072,24 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         <div class="warning">
           <strong>Mode expectation</strong>
           If the student wants notes, tables, worked examples, or full answers, they should be in Guided Learning. Recall mode is intentionally the opposite: minimal cues under pressure.
+        </div>
+        <h3>CTF mode</h3>
+        <p>CTF mode treats the session as authorized offensive security work — the persona's "no exploit code" rule is lifted so the model can produce concrete payloads, enumeration steps, and tool invocations.</p>
+        <ul>
+          <li>Use this only for CTF challenges, wargames, or labs the student owns or is authorized against.</li>
+          <li>If an Ollama API key is configured, every non-social CTF turn is preloaded with web-search results for current CVEs, writeups, and tool docs.</li>
+          <li>Tool-capable cloud models (e.g. <code>gpt-oss:120b-cloud</code>) are recommended; live web search and the <code>ctf_agent_command</code> tool both require tool calling.</li>
+        </ul>
+        <h3>Custom mode</h3>
+        <p>Custom mode sends <strong>no system prompt at all</strong> — no Professor Tux persona, no identity guard, no safety rules, no teaching style, no few-shot examples. The model receives only the topic / lecture context (if admin set them), the conversation history, and the student's message.</p>
+        <ul>
+          <li>Use this to evaluate the raw behaviour of an active model, or when the model already carries its own teaching persona.</li>
+          <li>Whatever guardrails you need (refusing offensive use, hiding the underlying model name, scope to cybersecurity, output style) must be <strong>built into the model itself</strong> — fine-tuning, an Ollama <code>Modelfile</code> <code>SYSTEM</code> directive, or a model that already enforces them internally.</li>
+          <li>The admin panel shows a confirmation modal before activating Custom mode so the operator acknowledges this trade-off.</li>
+        </ul>
+        <div class="warning">
+          <strong>Custom mode is not a teaching mode</strong>
+          Without the base persona, the model can leak its underlying name, ignore the cybersecurity scope, and refuse or comply with offensive requests according to its own training. Treat Custom mode as a developer / evaluation surface, not a default for students.
         </div>
         <h3>Sessions</h3>
         <p>Student chat sessions are created in memory. If the backend restarts, those sessions are lost and the browser may need to recreate the session.</p>
@@ -1141,19 +1163,132 @@ flowchart TD
 
       <section class="section" id="modes">
         <h2>Teaching Modes</h2>
-        <p>Modes live in <code>app/modes/</code> and are auto-discovered at startup.</p>
+        <p>A mode is a single Markdown file in <code>app/modes/</code>. Drop a new <code>.md</code> file there, restart the server (or call <code>POST /modes/reload</code> from the admin panel), and the mode appears in the admin and in <code>GET /modes</code>.</p>
+        <p>Loader: <code>app/mode_loader.py</code>. Prompt assembly: <code>ProfessorTux.build_messages</code> in <code>app/professor.py</code>.</p>
+        <div class="warning">
+          <strong>Do not delete the six built-in modes</strong>
+          <code>recall.md</code>, <code>recall_wrong.md</code>, <code>guided.md</code>, <code>guided_wrong.md</code>, <code>ctf.md</code>, and <code>custom.md</code> have ids wired into special-case logic in <code>app/professor.py</code> (recall hard rules, CTF override, wrong-turn rules, custom-mode persona bypass) and into the admin confirmation modals. You can freely <strong>add</strong> new mode files alongside them, and freely <strong>delete or edit</strong> any modes you yourself add — but removing the originals will leave dead references in the codebase.
+        </div>
         <div class="code-block"><pre><code>app/modes/
 ├── guided.md
+├── guided_wrong.md
 ├── recall.md
+├── recall_wrong.md
+├── ctf.md
+├── custom.md
 └── README.md</code></pre></div>
-        <h3>Creating a new mode</h3>
-        <ol>
-          <li>Create a new <code>.md</code> file under <code>app/modes/</code>.</li>
-          <li>Add YAML frontmatter with <code>id</code>, <code>name</code>, and optional metadata.</li>
-          <li>Write the system prompt body below the frontmatter.</li>
-          <li>Reload modes from admin or restart the server.</li>
-        </ol>
-        <p>For the mode file structure, see <code>app/modes/README.md</code>.</p>
+
+        <h3>File layout</h3>
+        <div class="code-block"><pre><code>---
+id: my_mode
+name: My Mode
+icon: 🎯
+color: "#22d3ee"
+description: One-line summary shown in the admin mode card.
+hint_message: Optional reminder shown to the student after each response.
+---
+
+System prompt body goes here. This is what shapes the model's behaviour
+inside this mode.</code></pre></div>
+
+        <h3>Frontmatter fields</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Field</th><th>Required</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>id</code></td><td>Yes</td><td>Unique slug. Used in the API and to match the special-case rules in <code>professor.py</code> (see Reserved IDs).</td></tr>
+              <tr><td><code>name</code></td><td>Yes</td><td>Display label on the admin mode card and the student-page mode pill.</td></tr>
+              <tr><td><code>icon</code></td><td>No</td><td>Single emoji rendered inside the mode card.</td></tr>
+              <tr><td><code>color</code></td><td>No</td><td>Hex string in quotes (e.g. <code>"#facc15"</code>). Drives the admin card glow/border; feeds the student-page theme if you wire it up (see below).</td></tr>
+              <tr><td><code>description</code></td><td>No</td><td>One-sentence subtitle shown under the name on the admin card.</td></tr>
+              <tr><td><code>hint_message</code></td><td>No</td><td>Appended below each model response on the student page. Leave blank for none.</td></tr>
+              <tr><td><code>student_message</code></td><td>No</td><td>Empty-state intro copy shown on the student page before the first question. Falls back to <code>description</code>, then to a generic placeholder.</td></tr>
+              <tr><td><code>student_title</code></td><td>No</td><td>Headline shown above the empty-state copy. Falls back to a generic "Ask Professor Tux".</td></tr>
+              <tr><td><code>student_placeholder</code></td><td>No</td><td>Placeholder text inside the chat input box. Falls back to a generic prompt.</td></tr>
+              <tr><td><code>student_subtitle</code></td><td>No</td><td>Tag-line shown after "Professor Tux" in the page header. Falls back to the mode <code>name</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The frontmatter parser is intentionally minimal — one <code>key: value</code> per line, quotes stripped, no nested YAML or multi-line strings.</p>
+
+        <h3>What the body should contain</h3>
+        <p>For every non-custom mode, the body is appended to the base persona as <code>"You are in {name}. {body}"</code>. Keep it short and behavioural:</p>
+        <ul>
+          <li>A one-line statement of what this mode does.</li>
+          <li>A bulleted list of rules (be concise, use tables when comparing, stay on cybersecurity, etc.).</li>
+          <li>Optional <code>## Examples</code> block with <code>**Student:** … / **Response:** …</code> pairs separated by <code>---</code>. These become few-shot turns prepended to the conversation — useful for small models that imitate better than they instruction-follow.</li>
+          <li>Optional <code>## Suggestions</code> block (parsed and stripped from the system prompt) for the starter cards on the student empty state. One bullet per card: <code>- **Card title:** Prompt text sent when clicked.</code></li>
+        </ul>
+
+        <div class="warning">
+          <strong>500-character rule cap</strong>
+          <code>_split_mode_prompt</code> joins all rule lines with single spaces and truncates at ~500 chars before injection. Long rule lists get cut off mid-sentence. Put your most important rules first, keep each bullet under ~100 chars, and restate long rules tersely. <code>## Examples</code> are parsed separately and not subject to the cap.
+        </div>
+
+        <h3>Reserved IDs</h3>
+        <p>These IDs trigger extra logic in <code>app/professor.py</code> on top of your body. If your mode's id matches one of these patterns, you inherit the extra rules — pick a fresh slug if you don't want them.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>ID pattern</th><th>Extra behaviour</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>recall</code>, <code>recall_*</code></td><td>Adds <code>RECALL_MODE_HARD_RULES</code>. If the student message looks like an MCQ, also adds <code>RECALL_MODE_MCQ_RULES</code>. Caps <code>max_tokens</code> at 96.</td></tr>
+              <tr><td><code>*_wrong</code></td><td>When the wrong-turn flag is set on a request, adds <code>WRONG_TURN_HARD_RULES</code> plus the recall- or guided-flavour wrong-turn rules. Bumps temperature to ≥1.05.</td></tr>
+              <tr><td><code>ctf</code></td><td>Adds <code>CTF_MODE_HARD_RULES</code> (lifts the "no exploit code" rule, enables <code>web_search</code> preloading + <code>ctf_agent_command</code>). Admin shows a confirmation modal before activating.</td></tr>
+              <tr><td><code>custom</code></td><td><strong>Skips the base persona, the mode marker line, all overrides, and few-shot examples.</strong> Only topic / lecture context (if set) and the conversation history reach the model. Admin shows a confirmation modal.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Student-page wiring</h3>
+        <p>Everything student-facing for a mode lives in this <code>.md</code> file — the student page reads it from the <code>/modes</code> API. Specifically:</p>
+        <ul>
+          <li>The mode's <code>color</code> drives the entire student-page palette via <code>applyModeAccent()</code> in <code>index.html</code> — accent, surface, border, and text vars are derived from the hex via CSS <code>color-mix()</code>. No per-mode CSS class needed.</li>
+          <li>The four <code>student_*</code> frontmatter fields drive the mode pill, empty-state title, empty-state copy, composer placeholder, and brand subtitle. Generic fallbacks kick in for any field you leave blank.</li>
+          <li>The <code>## Suggestions</code> body block drives the starter cards.</li>
+        </ul>
+        <div class="info-box">
+          <strong>Removing a mode is a single delete</strong>
+          Deleting a <code>.md</code> file removes a mode cleanly with no leftover code in <code>index.html</code>. A brand-new <code>.md</code> file shows up fully styled with no JS or CSS edits.
+        </div>
+
+        <h3>Reloading</h3>
+        <ul>
+          <li><code>GET /modes</code> (public) re-scans <code>app/modes/</code> on every call, so dropping a new <code>.md</code> file is picked up the moment the admin page refreshes — no manual reload required.</li>
+          <li><code>POST /modes/reload</code> (admin auth) is still available as an explicit force-refresh and is what the <em>↻ Reload Modes</em> button calls.</li>
+          <li>A full server restart also picks up changes.</li>
+        </ul>
+
+        <h3>Minimal template</h3>
+        <div class="code-block"><pre><code>---
+id: example
+name: Example Mode
+icon: ✨
+color: "#a78bfa"
+description: One-sentence summary.
+hint_message:
+student_message: Short intro shown on the student empty state.
+student_title: Headline above the intro.
+student_placeholder: Placeholder text in the chat input.
+student_subtitle: Short tag-line in the page header.
+---
+
+## Suggestions
+
+- **Card one title:** Prompt sent when this card is clicked.
+- **Card two title:** Another starter prompt.
+- **Card three title:** And another.
+- **Card four title:** And the last one.
+
+State the teaching style in one line.
+
+- Rule one.
+- Rule two.
+- Stay strictly on cybersecurity and adjacent topics.</code></pre></div>
+        <p>That's enough to register a working mode. Add <code>## Examples</code> blocks if the model needs imitation cues; otherwise leave the body lean.</p>
       </section>
 
       <section class="section" id="cli">

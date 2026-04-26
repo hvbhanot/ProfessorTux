@@ -339,6 +339,10 @@ class ProfessorTux:
         return (mode_id or "").strip().lower() == "ctf"
 
     @staticmethod
+    def _is_custom_mode(mode_id: str) -> bool:
+        return (mode_id or "").strip().lower() == "custom"
+
+    @staticmethod
     def _is_multiple_choice_prompt(text: str) -> bool:
         if not text:
             return False
@@ -377,21 +381,24 @@ class ProfessorTux:
         mode_name = mode_def.name if mode_def else "Default"
 
         rules, examples = self._split_mode_prompt(mode_rules)
+        is_custom = self._is_custom_mode(mode_id)
 
-        parts = [PERSONA_BASE]
-        parts.append(f"\n\nYou are in {mode_name}. {rules}")
-        if self._is_recall_mode(mode_id):
-            parts.append(f"\n\n{RECALL_MODE_HARD_RULES}")
-            if self._is_multiple_choice_prompt(student_message):
-                parts.append(f"\n\n{RECALL_MODE_MCQ_RULES}")
-        if self._is_ctf_mode(mode_id):
-            parts.append(f"\n\n{CTF_MODE_HARD_RULES}")
-        if self._is_wrong_mode(mode_id) and apply_wrongness:
-            parts.append(f"\n\n{WRONG_TURN_HARD_RULES}")
+        parts: list[str] = []
+        if not is_custom:
+            parts.append(PERSONA_BASE)
+            parts.append(f"\n\nYou are in {mode_name}. {rules}")
             if self._is_recall_mode(mode_id):
-                parts.append(f"\n\n{WRONG_TURN_RECALL_RULES}")
-            else:
-                parts.append(f"\n\n{WRONG_TURN_GUIDED_RULES}")
+                parts.append(f"\n\n{RECALL_MODE_HARD_RULES}")
+                if self._is_multiple_choice_prompt(student_message):
+                    parts.append(f"\n\n{RECALL_MODE_MCQ_RULES}")
+            if self._is_ctf_mode(mode_id):
+                parts.append(f"\n\n{CTF_MODE_HARD_RULES}")
+            if self._is_wrong_mode(mode_id) and apply_wrongness:
+                parts.append(f"\n\n{WRONG_TURN_HARD_RULES}")
+                if self._is_recall_mode(mode_id):
+                    parts.append(f"\n\n{WRONG_TURN_RECALL_RULES}")
+                else:
+                    parts.append(f"\n\n{WRONG_TURN_GUIDED_RULES}")
 
         if topic:
             parts.append(f"\nCurrent topic: {topic}.")
@@ -402,13 +409,16 @@ class ProfessorTux:
         if lecture_context:
             parts.append(f"\n\n{LECTURE_CONTEXT_HEADER}{lecture_context}")
 
-        system_prompt = "".join(parts)
-        messages = [{"role": "system", "content": system_prompt}]
+        messages: list[dict] = []
+        system_prompt = "".join(parts).lstrip()
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
 
         # Few-shot examples — small models learn expected behavior by imitation.
-        for ex in examples:
-            messages.append({"role": "user", "content": ex["student"]})
-            messages.append({"role": "assistant", "content": ex["response"]})
+        if not is_custom:
+            for ex in examples:
+                messages.append({"role": "user", "content": ex["student"]})
+                messages.append({"role": "assistant", "content": ex["response"]})
 
         for msg in history[-16:]:
             role = "user" if msg["role"] == "student" else "assistant"

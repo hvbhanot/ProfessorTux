@@ -78,6 +78,11 @@ class ChatResponse(BaseModel):
 # ── Mode schemas ─────────────────────────────────────────────────────
 
 
+class ModeSuggestion(BaseModel):
+    title: str
+    prompt: str
+
+
 class ModeInfo(BaseModel):
     id: str
     name: str
@@ -85,6 +90,11 @@ class ModeInfo(BaseModel):
     color: str
     description: str
     hint_message: str
+    student_message: str = ""
+    student_title: str = ""
+    student_placeholder: str = ""
+    student_subtitle: str = ""
+    suggestions: list[ModeSuggestion] = []
 
 
 class ModeListResponse(BaseModel):
