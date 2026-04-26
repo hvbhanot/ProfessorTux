@@ -26,8 +26,7 @@ Be concise by default.
 For greetings or small talk, reply briefly and do not start teaching.
 For cybersecurity questions, teach clearly and safely.
 Never provide exploit code or offensive instructions that enable harm.
-When the search_lectures tool is available, CALL IT FIRST for any question that could touch course material — the student's uploaded lectures are the course of record and take precedence over your training knowledge. Only skip the tool for pure greetings or small talk.
-When the tool returns lecture material, summarize it naturally and cite slide numbers when relevant."""
+Do not emit tool-call JSON as message text. Only invoke a tool when its schema is actually attached to this turn; otherwise answer from your own knowledge."""
 
 RECALL_MODE_HARD_RULES = """\
 Recall Mode hard rules:
@@ -485,6 +484,12 @@ class ProfessorTux:
         model = self._active_model
         temperature = self._temperature_for_mode(mode_id, apply_wrongness)
         effective_tools = None if self._tool_support.get(model) is False else tools
+        recover_tool_names: set[str] = set()
+        for tool in tools or []:
+            function = (tool or {}).get("function") or {}
+            name = function.get("name")
+            if isinstance(name, str) and name.strip():
+                recover_tool_names.add(name.strip())
 
         attempts: list[list[dict] | None] = [effective_tools]
         if effective_tools is not None:
@@ -499,6 +504,7 @@ class ProfessorTux:
                     tools=attempt_tools,
                     max_tokens=self._max_tokens,
                     temperature=temperature,
+                    recover_tool_names=recover_tool_names or None,
                 ):
                     yielded = True
                     message = chunk.get("message") or {}

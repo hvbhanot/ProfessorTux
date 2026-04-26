@@ -121,7 +121,7 @@ def _format_bytes(size_bytes: int | float | None) -> str:
 
 
 _TOOL_NAME_KEYS = ("name", "tool", "tool_name", "action", "function")
-_TOOL_ARG_KEYS = ("arguments", "args", "parameters", "tool_input", "input")
+_TOOL_ARG_KEYS = ("arguments", "args", "parameters", "params", "tool_input", "input")
 _SINGLE_ARG_FALLBACK_KEYS = ("query", "q", "text", "prompt")
 
 
@@ -343,6 +343,7 @@ class ModelBackend(ABC):
         max_tokens: int,
         temperature: float,
         tools: list[dict] | None = None,
+        recover_tool_names: set[str] | None = None,
     ) -> Iterable[dict]:
         raise NotImplementedError
 
@@ -708,6 +709,7 @@ class OllamaBackend(ModelBackend):
         max_tokens: int,
         temperature: float,
         tools: list[dict] | None = None,
+        recover_tool_names: set[str] | None = None,
     ) -> Iterable[dict]:
         if self.provider_id == "ollama":
             self.ensure_server_running()
@@ -757,6 +759,15 @@ class OllamaBackend(ModelBackend):
         with self._post("/api/chat", payload=payload, stream=True) as response:
             if not response.ok:
                 self._raise_http_error(response, "stream")
+            # Defense-in-depth: if the reply begins with `{`, models sometimes
+            # emit a hallucinated tool-call blob as text even when no tool is
+            # attached. Buffer that prefix until we can either confirm it's a
+            # recoverable tool call (swallow it) or rule it out (flush as text).
+            buffer_parts: list[str] = []
+            buffered_raw: list[dict] = []
+            buffering = bool(recover_tool_names)
+            committed_text = False
+            prefix_decided = False
             for line in response.iter_lines(decode_unicode=True):
                 if not line:
                     continue
@@ -769,7 +780,60 @@ class OllamaBackend(ModelBackend):
                 message = data.get("message") or {}
                 if message:
                     message["content"] = _normalize_content(message.get("content"))
-                yield data
+
+                if not buffering:
+                    yield data
+                    continue
+
+                chunk_text = message.get("content") or ""
+                buffer_parts.append(chunk_text)
+                buffered_raw.append(data)
+                combined = "".join(buffer_parts)
+
+                if not prefix_decided:
+                    lead = combined.lstrip()
+                    if not lead:
+                        if data.get("done"):
+                            yield data
+                            buffer_parts.clear()
+                            buffered_raw.clear()
+                        continue
+                    if not lead.startswith("{") and not lead.startswith("```"):
+                        # Not a JSON-shaped reply — flush what we have and stop buffering.
+                        prefix_decided = True
+                        buffering = False
+                        committed_text = True
+                        for pending in buffered_raw:
+                            yield pending
+                        buffer_parts.clear()
+                        buffered_raw.clear()
+                        continue
+                    prefix_decided = True
+
+                if data.get("done"):
+                    stripped, recovered = _coerce_text_tool_call(
+                        combined, recover_tool_names or set()
+                    )
+                    if recovered:
+                        synthetic = dict(data)
+                        synthetic_message = {
+                            "role": message.get("role", "assistant"),
+                            "content": stripped,
+                            "tool_calls": recovered,
+                        }
+                        if message.get("thinking"):
+                            synthetic_message["thinking"] = message["thinking"]
+                        synthetic["message"] = synthetic_message
+                        yield synthetic
+                    else:
+                        for pending in buffered_raw:
+                            yield pending
+                    buffer_parts.clear()
+                    buffered_raw.clear()
+                    committed_text = True
+            if buffered_raw and not committed_text:
+                for pending in buffered_raw:
+                    yield pending
 
     def generate(
         self,
