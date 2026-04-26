@@ -7,6 +7,31 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    securityLevel: "strict",
+    fontFamily: "IBM Plex Sans, sans-serif",
+    themeVariables: {
+      background: "#0f1515",
+      primaryColor: "#161f1f",
+      primaryTextColor: "#edf5f1",
+      primaryBorderColor: "#35514c",
+      lineColor: "#6effa9",
+      secondaryColor: "#121919",
+      tertiaryColor: "#0b1010",
+      tertiaryTextColor: "#b8c7c0",
+      clusterBkg: "#0f1515",
+      clusterBorder: "#243232",
+      edgeLabelBackground: "#0f1515",
+      noteBkgColor: "#161f1f",
+      noteTextColor: "#edf5f1",
+      noteBorderColor: "#35514c"
+    }
+  });
+</script>
 <style>
 :root{
   --font-ui:"IBM Plex Sans",sans-serif;
@@ -268,6 +293,10 @@ pre{
   top:82px;
   align-self:start;
   padding:18px;
+  max-height:calc(100vh - 102px);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
 }
 
 .nav-card h2{
@@ -277,25 +306,60 @@ pre{
   font-family:var(--font-mono);
   letter-spacing:.12em;
   text-transform:uppercase;
+  flex-shrink:0;
 }
 
 .nav-card nav{
   display:grid;
-  gap:8px;
+  gap:6px;
+  overflow-y:auto;
+  padding-right:4px;
+  scrollbar-width:thin;
+  scrollbar-color:var(--border-strong) transparent;
 }
 
+.nav-card nav::-webkit-scrollbar{width:6px}
+.nav-card nav::-webkit-scrollbar-track{background:transparent}
+.nav-card nav::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:999px}
+
 .nav-card a{
-  display:block;
-  padding:10px 12px;
-  border-radius:12px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:10px;
   color:var(--text-soft);
   border:1px solid transparent;
+  font-size:13.5px;
+  line-height:1.3;
+  text-decoration:none;
+  transition:background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.nav-card a::before{
+  content:"";
+  width:3px;
+  height:14px;
+  border-radius:2px;
+  background:transparent;
+  flex-shrink:0;
+  transition:background-color .15s ease;
 }
 
 .nav-card a:hover{
   background:rgba(255,255,255,0.03);
   border-color:var(--border);
   text-decoration:none;
+}
+
+.nav-card a.is-active{
+  color:var(--accent);
+  background:var(--accent-soft);
+  border-color:var(--border-strong);
+}
+
+.nav-card a.is-active::before{
+  background:var(--accent);
 }
 
 .content{
@@ -436,6 +500,34 @@ tr:last-child td{
 
 .code-block{
   margin-top:14px;
+}
+
+.diagram{
+  margin-top:16px;
+  padding:18px;
+  border-radius:18px;
+  border:1px solid var(--border);
+  background:var(--panel-3);
+  overflow:auto;
+}
+
+.diagram .mermaid{
+  display:flex;
+  justify-content:center;
+  font-family:var(--font-ui);
+}
+
+.diagram .mermaid svg{
+  max-width:100%;
+  height:auto;
+}
+
+.diagram-caption{
+  margin:10px 4px 0;
+  color:var(--text-muted);
+  font:500 12px/1.4 var(--font-mono);
+  letter-spacing:.06em;
+  text-transform:uppercase;
 }
 
 .footer{
@@ -582,6 +674,7 @@ tr:last-child td{
         <a href="#storage">Persistence & Storage</a>
         <a href="#api">API Endpoints</a>
         <a href="#deployment">Deployment & Security</a>
+        <a href="#jetson">Jetson Nano Sizing</a>
         <a href="#troubleshooting">Troubleshooting</a>
       </nav>
     </aside>
@@ -600,6 +693,33 @@ tr:last-child td{
           <strong>Important behavior</strong>
           This app uses an Ollama-compatible <code>/api/chat</code> endpoint. That means you can run it with local Ollama, a remote Ollama-compatible host, or local Ollama forwarding to Ollama Cloud.
         </div>
+        <h3>System architecture</h3>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart LR
+  Student["Student UI<br/>/"]
+  Admin["Admin UI<br/>/admin"]
+  API["FastAPI Backend<br/>app/main.py"]
+  Sessions[("In-memory<br/>sessions")]
+  Chroma[("ChromaDB<br/>./data/chromadb")]
+  Uploads[("Uploads<br/>./data/uploads")]
+  Logs[("Chat logs<br/>./data/logs")]
+  Ollama["Ollama-compatible<br/>backend /api/chat"]
+  Cloud["Ollama Cloud<br/>web search + models"]
+
+  Student -->|chat / stream| API
+  Admin -->|config / uploads| API
+  API <--> Sessions
+  API -->|append every turn| Logs
+  API -->|retrieve lecture context| Chroma
+  API -->|store files| Uploads
+  Uploads -->|chunk + embed| Chroma
+  API -->|generate| Ollama
+  Ollama -.->|optional forward| Cloud
+  API -.->|CTF web search| Cloud
+          </div>
+          <p class="diagram-caption">Request flow across the student UI, admin UI, FastAPI backend, retrieval store, and Ollama backend.</p>
+        </div>
       </section>
 
       <section class="section" id="requirements">
@@ -611,8 +731,8 @@ tr:last-child td{
           <li>Enough disk and RAM for your chosen model and lecture embedding index</li>
         </ul>
         <div class="warning">
-          <strong>Before exposing this app to other users</strong>
-          Change the default admin credentials. Out of the box they are <code>admin</code> / <code>professortux</code>.
+          <strong>Admin credentials reset on every server restart</strong>
+          Bootstrap login uses <code>admin</code> / <code>professortux</code> (or whatever you set in <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code>). Immediately on first sign-in, the admin panel forces you to set a fresh username and password for this server lifetime. Credentials live in memory only and are wiped when the FastAPI process restarts. See <a href="#admin-setup">Admin Setup</a> for the full flow.
         </div>
       </section>
 
@@ -669,29 +789,63 @@ ollama pull qwen3.5:4b</code></pre></div>
       <section class="section" id="day-1">
         <h2>Day-1 Operator Checklist</h2>
         <p>If this is your first time setting up Professor Tux, use this sequence. It covers the actual order that avoids the most common misconfiguration issues.</p>
+
+        <div class="diagram">
+          <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Op as Operator
+  participant API as FastAPI
+  participant Adm as Admin UI
+  participant Oll as Ollama
+  participant Ch as ChromaDB
+
+  Op->>API: GET /health
+  API-->>Op: 200 OK
+  Op->>Adm: Sign in to /admin (bootstrap creds)
+  Adm-->>Op: Forced credential reset
+  Op->>Adm: Set new username + password
+  Op->>Adm: Set Ollama URL + model
+  Adm->>Oll: pull / load model
+  Oll-->>Adm: ready
+  Op->>Adm: Pick default mode + topic
+  Op->>Adm: Upload lecture material
+  Adm->>Ch: chunk + embed + persist
+  Op->>API: Test Guided question
+  API->>Ch: retrieve top-K
+  API->>Oll: generate
+  Oll-->>API: streamed answer
+  API-->>Op: cited Guided response
+          </div>
+          <p class="diagram-caption">The order matters: confirm the backend, lock the model, set defaults, then ingest lectures before validating with a real question.</p>
+        </div>
         <div class="steps">
           <div class="step">
             <strong>1. Confirm the backend is live</strong>
             <p>Open <code>http://localhost:8000/health</code> or load <code>/</code> in the browser. If the server is not reachable, fix that before doing any admin work.</p>
           </div>
           <div class="step">
-            <strong>2. Sign in to <code>/admin</code> and verify the model backend</strong>
-            <p>Check the Ollama URL first. Then enter a model name and click <em>Run</em>. Do not move on until the admin page shows the model as ready.</p>
+            <strong>2. Sign in to <code>/admin</code> and complete the forced credential reset</strong>
+            <p>Sign in with the bootstrap credentials (<code>admin</code> / <code>professortux</code> by default, or your <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code> overrides). The admin panel will immediately force you to set a new username and password for this server lifetime — every other control is locked until you do.</p>
           </div>
           <div class="step">
-            <strong>3. Set the default student mode intentionally</strong>
+            <strong>3. Verify the model backend</strong>
+            <p>Check the Ollama URL. Then enter a model name and click <em>Run</em>. Do not move on until the admin page shows the model as ready.</p>
+          </div>
+          <div class="step">
+            <strong>4. Set the default student mode intentionally</strong>
             <p>Use <strong>Guided Learning</strong> if this is a teaching assistant. Use <strong>Recall</strong> only if the student needs tiny cues during an exam and should not receive direct answers.</p>
           </div>
           <div class="step">
-            <strong>4. Upload course material if you want course-grounded teaching</strong>
-            <p>Upload lecture PDFs, decks, or notes. Wait for ingestion to finish, then confirm the lecture list and chunk count increase in admin.</p>
+            <strong>5. Upload course material if you want course-grounded teaching</strong>
+            <p>Upload lecture PDFs, decks, or notes. Wait for ingestion to finish, then confirm the lecture list and chunk count increase in admin. Existing uploads from prior runs are still on disk; you only need to upload what's new.</p>
           </div>
           <div class="step">
-            <strong>5. Validate Guided mode with a course-specific question</strong>
+            <strong>6. Validate Guided mode with a course-specific question</strong>
             <p>Ask something that clearly depends on the uploaded content. If Guided mode still answers generically, check lecture context, ingestion status, and the uploaded files.</p>
           </div>
           <div class="step">
-            <strong>6. Validate Recall mode with a direct-answer request</strong>
+            <strong>7. Validate Recall mode with a direct-answer request</strong>
             <p>Ask for a hint-only response such as <code>Give me one small hint about XSS, do not answer directly.</code> Recall should respond with a nudge, not a solution.</p>
           </div>
         </div>
@@ -730,6 +884,22 @@ OLLAMA_KEEP_ALIVE=5m</code></pre></div>
       <section class="section" id="ollama-cloud">
         <h2>Ollama Cloud Setup</h2>
         <p>For chat, Professor Tux talks to an Ollama-compatible local endpoint. The local daemon handles cloud model forwarding after you sign in. For CTF live web search, Professor Tux calls Ollama's authenticated web-search API directly with a saved admin API key or <code>OLLAMA_API_KEY</code>.</p>
+
+        <h3>How the two cloud paths split</h3>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart LR
+  PT["Professor Tux<br/>FastAPI"]
+  Local["Local Ollama daemon<br/>OLLAMA_BASE_URL"]
+  CloudChat["Ollama Cloud<br/>(model inference)"]
+  CloudWeb["Ollama Cloud<br/>web search<br/>OLLAMA_WEB_SEARCH_BASE_URL"]
+
+  PT -->|chat / generate| Local
+  Local -->|forwards :cloud models<br/>after `ollama signin`| CloudChat
+  PT -->|direct, with OLLAMA_API_KEY| CloudWeb
+          </div>
+          <p class="diagram-caption">Chat traffic always goes through the local daemon. CTF web search is a separate authenticated call that bypasses it.</p>
+        </div>
         <div class="steps">
           <div class="step">
             <strong>1. Start your local Ollama daemon</strong>
@@ -763,46 +933,118 @@ OLLAMA_WEB_SEARCH_BASE_URL=https://ollama.com</code></pre></div>
 
       <section class="section" id="admin-setup">
         <h2>Admin Setup</h2>
-        <p>The admin page is where you finish runtime configuration after the server is up.</p>
-        <h3>Login</h3>
-        <p>Open <code>/admin</code> and sign in with the configured admin credentials. Defaults are:</p>
+        <p>The admin page is where you finish runtime configuration after the server is up. Every server restart begins with a forced credential reset, then the rest of the runtime configuration is loaded from <code>./data/admin_runtime.json</code>.</p>
+
+        <h3>Bootstrap login</h3>
+        <p>Open <code>/admin</code> and sign in with the bootstrap credentials. The out-of-the-box defaults are:</p>
         <div class="code-block"><pre><code>username: admin
 password: professortux</code></pre></div>
-        <h3>Recommended first-time admin flow</h3>
+        <p>If you would prefer different bootstrap values, set <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code> in <code>.env</code> before starting the server. Either way, those values are <strong>only accepted for the one bootstrap login per server lifetime</strong> — they cannot become the running credentials.</p>
+
+        <h3>Forced credential reset</h3>
+        <div class="warning">
+          <strong>Credentials reset on every server start — this is intentional.</strong>
+          The admin panel refuses to load any other control until you replace both the username and the password. Credentials are kept in memory only; neither the username nor the PBKDF2-SHA256 password hash is written to <code>./data/admin_runtime.json</code>. When the FastAPI process restarts, both are wiped and the forced flow fires again. Plan real credentials ahead of time and expect to set them on each boot.
+        </div>
+        <p>You can also rotate the running credentials mid-session via the <em>Change Credentials</em> button in the topbar; doing so signs every other admin session out.</p>
+
+        <h3>Per-restart credential lifecycle</h3>
+        <div class="diagram">
+          <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Op as Operator
+  participant UI as Admin UI
+  participant API as FastAPI
+  participant Mem as In-memory<br/>creds
+
+  Note over Mem: Server starts.<br/>Memory is empty.
+  Op->>UI: Open /admin
+  Op->>API: POST /admin/login<br/>(bootstrap creds)
+  API-->>UI: token + must_change_credentials=true
+  UI->>Op: Force credential overlay
+  Op->>API: POST /admin/password<br/>(new username + password)
+  API->>Mem: Store new username + PBKDF2 hash
+  API-->>UI: ok, must_change_credentials=false
+  Op->>UI: Use admin panel normally
+  Note over API,Mem: Restart wipes Mem.<br/>Loop back to step 1.
+          </div>
+          <p class="diagram-caption">The bootstrap login is one-shot. The first thing the operator does on every boot is rotate to fresh credentials.</p>
+        </div>
+
+        <h3>Username rules</h3>
+        <ul>
+          <li>3–64 characters.</li>
+          <li>Letters, digits, dot, underscore, and hyphen only.</li>
+          <li>Cannot equal the default <code>admin</code>.</li>
+        </ul>
+        <h3>Password rules</h3>
+        <ul>
+          <li>At least 8 characters.</li>
+          <li>Cannot equal the default <code>professortux</code>.</li>
+          <li>Must differ from the bootstrap password you just used.</li>
+        </ul>
+
+        <h3>Recommended per-boot admin flow</h3>
         <ol>
-          <li>Verify the Ollama API URL is correct.</li>
+          <li><strong>Sign in with the bootstrap credentials and immediately set fresh ones</strong> — this is non-skippable.</li>
+          <li>Verify the Ollama API URL is correct (already loaded from <code>admin_runtime.json</code>).</li>
           <li>Enter a model name and click <em>Run</em>.</li>
           <li>Pick the student default mode.</li>
           <li>Set an optional default topic.</li>
           <li>Set an optional course filter.</li>
           <li>Decide whether lecture slide context should be enabled by default.</li>
-          <li>Upload lecture materials if you want course-grounded Guided Learning responses.</li>
+          <li>Upload new lecture materials if needed (existing uploads survive the restart).</li>
         </ol>
+
         <h3>Important admin controls</h3>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Control</th><th>What it does</th><th>Notes</th></tr>
+              <tr><th>Control</th><th>What it does</th><th>Persistence</th></tr>
             </thead>
             <tbody>
+              <tr><td>Change Credentials (topbar)</td><td>Rotates the running admin username and password</td><td>In memory only — wiped on every restart by design</td></tr>
               <tr><td>Ollama API URL</td><td>Changes the runtime backend endpoint</td><td>Persisted to <code>./data/admin_runtime.json</code></td></tr>
               <tr><td>Model Name</td><td>Switches to a model on that endpoint</td><td>Local endpoints can auto-pull missing models</td></tr>
               <tr><td>CTF Web Search</td><td>Stores the Ollama web-search API key and API URL</td><td>Persisted to <code>./data/admin_runtime.json</code>; key is not echoed back to the UI</td></tr>
-              <tr><td>Student Mode</td><td>Sets the default mode for new student sessions</td><td>Applied to new sessions</td></tr>
+              <tr><td>Student Mode</td><td>Sets the default mode for new student sessions</td><td>In memory; resets on restart</td></tr>
               <tr><td>Max Tokens</td><td>Sets response length limit</td><td>Persisted to <code>./data/admin_runtime.json</code></td></tr>
-              <tr><td>Lecture context toggle</td><td>Enables or disables lecture retrieval</td><td>Student page reads this via <code>/admin/config/public</code></td></tr>
+              <tr><td>Lecture context toggle</td><td>Enables or disables lecture retrieval</td><td>In memory; student page reads it via <code>/admin/config/public</code></td></tr>
             </tbody>
           </table>
         </div>
-        <div class="warning">
-          <strong>Persistence detail</strong>
-          The Ollama URL, CTF web-search settings, and max tokens are persisted. Other admin defaults such as mode, topic, course filter, and lecture-context toggle are runtime config in memory and may reset on server restart unless you add persistence for them.
+        <div class="info-box">
+          <strong>Quick persistence summary</strong>
+          Persisted across restarts: Ollama URL, CTF web-search settings, max tokens, uploaded lectures, ChromaDB embeddings, chat logs. Reset on every restart: admin credentials (by design), student default mode, topic, course filter, lecture-context toggle, in-memory student sessions, admin auth tokens.
         </div>
       </section>
 
       <section class="section" id="student-usage">
         <h2>Student Usage</h2>
         <p>The student page is intentionally simple. The learner does not manage runtime state there; they mainly choose a mode and ask questions.</p>
+
+        <h3>How modes route a question</h3>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart TD
+  Q["Student question"] --> Mode{"Active mode"}
+
+  Mode -->|Guided| GPrefetch["Prefetch lecture chunks<br/>(if enabled)"]
+  GPrefetch --> GModel["Model answers with<br/>worked steps + citations"]
+
+  Mode -->|Recall| RGuard["Strict cue-only guard<br/>no full answers"]
+  RGuard --> RModel["Model returns<br/>one short hint"]
+
+  Mode -->|CTF| CTFSearch["Optional Ollama<br/>web search"]
+  CTFSearch --> CTFModel["Model returns<br/>recon / exploit guidance"]
+
+  GModel --> Log["Append turn to<br/>chat_logs.jsonl"]
+  RModel --> Log
+  CTFModel --> Log
+          </div>
+          <p class="diagram-caption">Each mode shapes prompt assembly and tool access differently, but every turn is appended to the chat log.</p>
+        </div>
         <h3>Guided Learning mode</h3>
         <p>Guided Learning is for teaching, explanation, worked walkthroughs, and structured help. It is also the mode that uses uploaded lecture material when lecture context is enabled.</p>
         <ul>
@@ -829,6 +1071,17 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         </div>
         <h3>Sessions</h3>
         <p>Student chat sessions are created in memory. If the backend restarts, those sessions are lost and the browser may need to recreate the session.</p>
+        <h3>Chat logging</h3>
+        <p>Every chat turn placed through the student interface is logged. Each entry is appended to <code>./data/logs/chat_logs.jsonl</code> and includes timestamp, client IP, session ID, mode, topic, the student's question, the system prompt, the model response, retrieved sources, response duration, and the model name.</p>
+        <ul>
+          <li>Logs persist across restarts — they live on disk under <code>CHAT_LOG_DIR</code>.</li>
+          <li>The student UI does not surface a "private mode"; everything sent there is recorded.</li>
+          <li>If you deploy this to learners, disclose the logging in your acceptable-use notice.</li>
+        </ul>
+        <div class="warning">
+          <strong>Privacy note for operators</strong>
+          Chat logs include raw question and response text plus the requesting IP. Treat <code>./data/logs/</code> as sensitive and keep it off shared backups unless that is intentional.
+        </div>
         <h3>What the student can and cannot control</h3>
         <ul>
           <li>The student can ask questions, continue the current session, and use the currently active learning mode.</li>
@@ -865,6 +1118,24 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         <div class="info-box">
           <strong>If uploads seem ignored</strong>
           Check that lecture context is enabled in admin, that documents were actually ingested, and that you are testing in Guided mode rather than Recall mode.
+        </div>
+        <h3>Ingestion and retrieval flow</h3>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart TD
+  Upload["Admin uploads<br/>PDF / PPT / TXT / MD"] --> Store["Save to UPLOAD_DIR"]
+  Store --> Extract["Extract text"]
+  Extract --> Chunk["Chunk with overlap<br/>(CHUNK_SIZE / CHUNK_OVERLAP)"]
+  Chunk --> Embed["Embed with<br/>EMBEDDING_MODEL"]
+  Embed --> Vector[("ChromaDB<br/>vector index")]
+
+  Question["Student asks<br/>question in Guided mode"] --> Prefetch["Prefetch top-K<br/>lecture chunks"]
+  Prefetch --> Vector
+  Vector --> Context["Inject context<br/>into prompt"]
+  Context --> Model["Ollama-compatible<br/>model"]
+  Model --> Answer["Cited Guided answer"]
+          </div>
+          <p class="diagram-caption">Upload-time ingestion (top) and query-time retrieval used by Guided Learning (bottom).</p>
         </div>
       </section>
 
@@ -935,8 +1206,9 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
             <tbody>
               <tr><td>Uploaded files</td><td><code>./data/uploads</code></td><td>Yes</td></tr>
               <tr><td>Lecture embeddings / vector store</td><td><code>./data/chromadb</code></td><td>Yes</td></tr>
-              <tr><td>Chat logs</td><td><code>./data/logs</code></td><td>Yes</td></tr>
-              <tr><td>Ollama URL, CTF web-search key/API URL, and max tokens runtime settings</td><td><code>./data/admin_runtime.json</code></td><td>Yes</td></tr>
+              <tr><td>Chat logs (JSONL of every student turn)</td><td><code>./data/logs/chat_logs.jsonl</code></td><td>Yes</td></tr>
+              <tr><td>Ollama URL, CTF web-search key/API URL, and max tokens</td><td><code>./data/admin_runtime.json</code></td><td>Yes</td></tr>
+              <tr><td>Admin username + password hash</td><td>In memory</td><td><strong>No — reset on every restart by design</strong></td></tr>
               <tr><td>Student sessions</td><td>In memory</td><td>No</td></tr>
               <tr><td>Admin auth tokens</td><td>In memory</td><td>No</td></tr>
               <tr><td>Default topic / course / mode / lecture toggle</td><td>Runtime memory</td><td>Not fully persisted</td></tr>
@@ -962,7 +1234,7 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
               <tr><td>Modes</td><td><code>GET /modes</code>, <code>POST /modes/reload</code></td></tr>
               <tr><td>Models</td><td><code>GET /models</code>, <code>GET /admin/models/status</code>, <code>PUT /admin/models/connection</code>, <code>POST /admin/models/switch</code></td></tr>
               <tr><td>Lectures</td><td><code>POST /lectures/upload</code>, <code>GET /lectures</code>, <code>DELETE /lectures/{doc_id}</code>, <code>POST /lectures/search</code></td></tr>
-              <tr><td>Admin config</td><td><code>POST /admin/login</code>, <code>GET /admin/config</code>, <code>PUT /admin/config</code>, <code>GET /admin/config/public</code></td></tr>
+              <tr><td>Admin config</td><td><code>POST /admin/login</code>, <code>POST /admin/password</code>, <code>GET /admin/verify</code>, <code>GET /admin/config</code>, <code>PUT /admin/config</code>, <code>GET /admin/config/public</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -972,16 +1244,107 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         <h2>Deployment & Security</h2>
         <p>The current codebase is optimized for local or controlled-network usage. If you plan to expose it more broadly, tighten a few things first.</p>
         <ul>
-          <li>Change the default admin credentials in <code>.env</code>.</li>
+          <li>Set non-default <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code> in <code>.env</code> for the bootstrap login. The forced credential reset still fires on every restart, so the env-var values are only used once per server lifetime.</li>
+          <li>Plan an out-of-band channel for the per-restart admin credentials (password manager, ops runbook, etc.) — they do not persist on disk.</li>
           <li>Put the app behind TLS using a reverse proxy if it will leave localhost.</li>
-          <li>Persist the <code>data/</code> directory if you want uploads, embeddings, logs, and runtime settings to survive container or VM replacement.</li>
-          <li>Be aware that student sessions and admin auth tokens are in memory only.</li>
+          <li>Persist the <code>data/</code> directory if you want uploads, embeddings, logs, and runtime settings to survive container or VM replacement. Admin credentials are deliberately excluded from <code>data/</code>.</li>
+          <li>Be aware that student sessions, admin auth tokens, and admin credentials are all in memory only.</li>
           <li>Review CORS settings in <code>app/main.py</code> before exposing the app to untrusted origins.</li>
         </ul>
         <div class="info-box">
           <strong>Good deployment split</strong>
           Run Professor Tux and Ollama on the same machine or same trusted network segment when possible. That keeps the backend path simple and avoids cross-host auth confusion with cloud-backed Ollama sessions.
         </div>
+      </section>
+
+      <section class="section" id="jetson">
+        <h2>Jetson Nano Sizing</h2>
+        <p>This section covers running Ollama on a NVIDIA Jetson while the FastAPI web server lives on a separate machine. Point <code>OLLAMA_BASE_URL</code> at the Jetson's IP (for example <code>http://192.168.1.42:11434</code>) and bind Ollama on the Jetson with <code>OLLAMA_HOST=0.0.0.0:11434</code>.</p>
+
+        <h3>Split-host topology</h3>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart LR
+  subgraph Classroom["Classroom LAN"]
+    Students["20 student browsers"]
+  end
+  subgraph WebHost["Web server host (CPU box)"]
+    FastAPI["Professor Tux<br/>FastAPI"]
+    LocalData[("./data<br/>uploads · chromadb · logs")]
+  end
+  subgraph JetsonHost["Jetson (Orin Nano 8GB)"]
+    OllamaD["ollama serve<br/>OLLAMA_HOST=0.0.0.0:11434"]
+    GPU["Ampere GPU<br/>+ shared 8GB"]
+    OllamaD --> GPU
+  end
+
+  Students -->|HTTPS| FastAPI
+  FastAPI --> LocalData
+  FastAPI -->|/api/chat over LAN| OllamaD
+          </div>
+          <p class="diagram-caption">Web server and inference are on different hosts. Keep both inside the trusted LAN — Ollama has no built-in auth.</p>
+        </div>
+
+        <h3>Which Jetson are you on?</h3>
+        <p>Hardware choice dominates everything else.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Board</th><th>RAM</th><th>Verdict for LLM serving</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Jetson Nano (Maxwell, original)</td><td>4 GB</td><td>Too weak for usable LLM serving — skip.</td></tr>
+              <tr><td>Jetson Orin Nano 8GB ("Jetson Nano Super")</td><td>8 GB shared</td><td>Recommended baseline. ~6 GB usable after OS overhead.</td></tr>
+              <tr><td>Jetson Orin NX 16GB</td><td>16 GB shared</td><td>Comfortable headroom for 7–8B models or higher concurrency.</td></tr>
+              <tr><td>Jetson AGX Orin 32 / 64 GB</td><td>32–64 GB shared</td><td>Real classroom workhorse — easily handles 20+ concurrent students.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Recommended model sizes for ~20 students</h3>
+        <p>The numbers below assume an Orin Nano 8GB with Q4 quantized models. RAM figures are weights only; budget another ~0.5–1.5 GB for KV cache depending on context length and parallel slots.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Model</th><th>RAM (Q4)</th><th>Single-user tok/s</th><th>Verdict for 20 students</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>llama3.2:1b</code> / <code>qwen2.5:1.5b</code></td><td>~1.5 GB</td><td>35–45</td><td>Snappy. Best for classes that need low latency and can tolerate shorter answers.</td></tr>
+              <tr><td><code>llama3.2:3b</code> / <code>qwen2.5:3b</code> / <code>phi3:mini</code></td><td>~2.5 GB</td><td>18–25</td><td><strong>Recommended sweet spot.</strong> Noticeably better answers, still room for 3–4 parallel slots.</td></tr>
+              <tr><td><code>qwen3.5:4b</code> (current default)</td><td>~3 GB</td><td>12–18</td><td>Borderline. Fine for ~10 active students; bursts of 20 will queue.</td></tr>
+              <tr><td>7–8B Q4 models</td><td>~5 GB</td><td>6–10</td><td>Avoid. Single-user feels OK; 20 concurrent will time out.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Tune Ollama for concurrency</h3>
+        <p>Set these on the Jetson before starting the daemon. They are server-side, not client-side — they belong on the box running <code>ollama serve</code>, not the box running Professor Tux.</p>
+        <div class="code-block"><pre><code>OLLAMA_NUM_PARALLEL=4
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_KEEP_ALIVE=30m
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_HOST=0.0.0.0:11434</code></pre></div>
+        <ul>
+          <li><code>OLLAMA_NUM_PARALLEL=4</code> — runs four concurrent generations on the same loaded model. Remaining students queue.</li>
+          <li><code>OLLAMA_MAX_LOADED_MODELS=1</code> — prevents the daemon from juggling models in and out of the 8 GB shared memory.</li>
+          <li><code>OLLAMA_KEEP_ALIVE=30m</code> — keeps the model resident between bursts so the first request after a quiet period does not pay the load cost.</li>
+          <li><code>OLLAMA_FLASH_ATTENTION=1</code> — reduces KV cache memory and speeds up long contexts on Ampere hardware.</li>
+        </ul>
+
+        <h3>Reality check</h3>
+        <p>Twenty truly-simultaneous, long-context generations on one Jetson are not realistic regardless of model size — the GPU is the bottleneck. In a real class of 20, only 3–6 students are typing at any instant, which is what the parallel-slots configuration is sized for. If lectures are bursty (everyone hits <em>Send</em> at once during a lab), expect 5–15 second waits before tokens start streaming. Streaming responses are already on by default, which hides the queue.</p>
+        <div class="info-box">
+          <strong>Recommended starting point</strong>
+          Run <code>llama3.2:3b-instruct-q4_K_M</code> or <code>qwen2.5:3b-instruct-q4_K_M</code> on an Orin Nano 8GB with <code>OLLAMA_NUM_PARALLEL=4</code>. Watch <code>tegrastats</code> and <code>nvidia-smi</code> during a class. If the GPU saturates and queues grow, drop to a 1.5B model. If answer quality is the limit, move to an Orin NX 16GB or split the load across two Jetsons behind a load balancer.
+        </div>
+
+        <h3>Web server on a different host</h3>
+        <p>When Professor Tux runs separately from Ollama:</p>
+        <ul>
+          <li>On the Jetson, expose Ollama with <code>OLLAMA_HOST=0.0.0.0:11434</code> and confirm a firewall rule allows the web-server host to reach it.</li>
+          <li>On the Professor Tux host, set <code>OLLAMA_BASE_URL=http://&lt;jetson-ip&gt;:11434</code> in <code>.env</code> (or in <em>Admin → Ollama API URL</em>).</li>
+          <li>Keep both machines on the same trusted LAN. Ollama has no built-in auth, so do not expose the Jetson's <code>11434</code> port to the public internet.</li>
+        </ul>
       </section>
 
       <section class="section" id="troubleshooting">
@@ -1015,7 +1378,13 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
         <p>Guided mode now prefetches lecture context before generation, so uploads should still work in cloud-backed generation. If they do not, check that you are in Guided mode, lecture context is enabled, and the uploaded content matches the question.</p>
 
         <h3>7. Changing admin settings does not survive restart</h3>
-        <p>Only some runtime settings are persisted right now. The Ollama URL, CTF web-search settings, and max tokens are saved; other admin defaults are still runtime-only unless you add persistence for them.</p>
+        <p>Only some runtime settings are persisted. The Ollama URL, CTF web-search settings, and max tokens are saved to <code>./data/admin_runtime.json</code>; mode/topic/course filter and lecture-context toggle are runtime-only.</p>
+
+        <h3>8. The admin panel keeps asking me to set credentials after every restart</h3>
+        <p>That is the intended behavior. Admin credentials are memory-only and are wiped on every server start by design. Sign in with the bootstrap credentials, set the new pair, and proceed. If you want different bootstrap values, change <code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code> in <code>.env</code> before starting the server.</p>
+
+        <h3>9. I forgot the credentials I just set in this session</h3>
+        <p>Restart the FastAPI process. The in-memory username and hash are wiped, and you can sign back in with the bootstrap credentials and pick new ones.</p>
       </section>
     </main>
   </div>
@@ -1024,5 +1393,54 @@ One quick cue only: what should I remember about CSRF?</code></pre></div>
     Professor Tux docs at <code>/docs</code>. API reference at <code>/api/docs</code>.
   </div>
 </div>
+
+<script>
+(function(){
+  const navLinks = Array.from(document.querySelectorAll(".nav-card nav a"));
+  const linkById = new Map();
+  navLinks.forEach(a => {
+    const id = (a.getAttribute("href") || "").replace(/^#/, "");
+    if (id) linkById.set(id, a);
+  });
+
+  const sections = navLinks
+    .map(a => document.getElementById((a.getAttribute("href") || "").replace(/^#/, "")))
+    .filter(Boolean);
+
+  let activeId = null;
+
+  function setActive(id){
+    if (id === activeId) return;
+    activeId = id;
+    navLinks.forEach(a => a.classList.remove("is-active"));
+    const link = linkById.get(id);
+    if (!link) return;
+    link.classList.add("is-active");
+    const navContainer = link.closest("nav");
+    if (navContainer) {
+      const linkRect = link.getBoundingClientRect();
+      const navRect = navContainer.getBoundingClientRect();
+      if (linkRect.top < navRect.top || linkRect.bottom > navRect.bottom) {
+        link.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }
+
+  function pickActiveSection(){
+    const probe = window.innerHeight * 0.3;
+    let current = sections[0];
+    for (const section of sections) {
+      const top = section.getBoundingClientRect().top;
+      if (top - probe <= 0) current = section;
+      else break;
+    }
+    if (current) setActive(current.id);
+  }
+
+  window.addEventListener("scroll", pickActiveSection, { passive: true });
+  window.addEventListener("resize", pickActiveSection);
+  pickActiveSection();
+})();
+</script>
 </body>
 </html>

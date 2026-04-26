@@ -8,6 +8,7 @@ import time
 import random
 import shutil
 import secrets
+import hashlib
 import logging
 import threading
 from pathlib import Path
@@ -57,6 +58,12 @@ logging.getLogger().addHandler(_file_handler)
 
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "professortux")
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "professortux"
+MIN_ADMIN_PASSWORD_LENGTH = 8
+MIN_ADMIN_USERNAME_LENGTH = 3
+MAX_ADMIN_USERNAME_LENGTH = 64
+ADMIN_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9._\-]+$")
 
 mode_loader = ModeLoader()
 professor: ProfessorTux | None = None
@@ -64,6 +71,7 @@ sessions = SessionManager()
 knowledge_base = LectureKnowledgeBase()
 chat_logger = ChatLogger()
 admin_tokens: set[str] = set()
+admin_tokens_pending_password_change: set[str] = set()
 model_operation_lock = threading.Lock()
 model_operation: dict = {
     "state": "idle",
@@ -81,6 +89,8 @@ runtime_settings: dict = {
     "ollama_api_key": "",
     "ollama_web_search_base_url": "",
     "max_tokens": None,
+    "admin_username": "",
+    "admin_password_hash": "",
 }
 
 WRONG_MODE_ERROR_RATE = 0.10
@@ -117,6 +127,9 @@ def _load_runtime_settings():
         runtime_settings["ollama_base_url"] = str(data.get("ollama_base_url", "") or "").strip()
         runtime_settings["ollama_api_key"] = str(data.get("ollama_api_key", "") or "").strip()
         runtime_settings["ollama_web_search_base_url"] = str(data.get("ollama_web_search_base_url", "") or "").strip()
+        # Admin credentials are intentionally NOT loaded — they reset on every restart.
+        runtime_settings["admin_username"] = ""
+        runtime_settings["admin_password_hash"] = ""
         saved_max_tokens = data.get("max_tokens")
         try:
             runtime_settings["max_tokens"] = int(saved_max_tokens) if saved_max_tokens is not None else None
@@ -133,6 +146,7 @@ def _save_runtime_settings():
             "ollama_api_key": runtime_settings.get("ollama_api_key", "").strip(),
             "ollama_web_search_base_url": runtime_settings.get("ollama_web_search_base_url", "").strip(),
             "max_tokens": runtime_settings.get("max_tokens"),
+            # Admin credentials are intentionally NOT persisted — they reset on every restart.
         }
 
     RUNTIME_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -228,6 +242,10 @@ def _reset_model_operation():
 async def lifespan(app: FastAPI):
     global professor
     _load_runtime_settings()
+    # Strip any legacy admin credentials from the persisted file — they are
+    # memory-only and must reset on every restart.
+    if RUNTIME_SETTINGS_PATH.exists():
+        _save_runtime_settings()
     n = mode_loader.discover()
     logger.info("%d teaching mode(s) available: %s",
                 n, ", ".join(mode_loader.available_modes))
@@ -276,13 +294,109 @@ class LoginRequest(BaseModel):
     password: str
 
 
-def verify_admin(request: Request):
+class CredentialChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+    new_username: str = ""
+
+
+def _hash_admin_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = 200_000
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+
+def _verify_hashed_password(password: str, encoded: str) -> bool:
+    try:
+        algo, iters, salt_hex, digest_hex = encoded.split("$")
+    except (ValueError, AttributeError):
+        return False
+    if algo != "pbkdf2_sha256":
+        return False
+    try:
+        iterations = int(iters)
+        salt = bytes.fromhex(salt_hex)
+    except (TypeError, ValueError):
+        return False
+    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return secrets.compare_digest(candidate.hex(), digest_hex)
+
+
+def _stored_admin_password_hash() -> str:
+    with runtime_settings_lock:
+        return runtime_settings.get("admin_password_hash", "").strip()
+
+
+def _stored_admin_username() -> str:
+    with runtime_settings_lock:
+        return runtime_settings.get("admin_username", "").strip()
+
+
+def _resolved_admin_username() -> str:
+    return _stored_admin_username() or ADMIN_USERNAME
+
+
+def _verify_admin_credentials(username: str, password: str) -> bool:
+    if username != _resolved_admin_username():
+        return False
+    stored = _stored_admin_password_hash()
+    if stored:
+        return _verify_hashed_password(password, stored)
+    return password == ADMIN_PASSWORD
+
+
+def _credentials_change_required() -> bool:
+    """True until the operator has set fresh credentials in this server lifetime.
+
+    Credentials are kept in memory only, so every restart wipes them and the
+    forced reset fires again. The env-var values (default `admin` / `professortux`)
+    are accepted as the bootstrap password for that one-time first login, but
+    they cannot become the persistent credentials.
+    """
+    return not _stored_admin_password_hash()
+
+
+def _validate_new_admin_username(candidate: str) -> str:
+    name = (candidate or "").strip()
+    if len(name) < MIN_ADMIN_USERNAME_LENGTH:
+        raise HTTPException(
+            400,
+            f"Username must be at least {MIN_ADMIN_USERNAME_LENGTH} characters",
+        )
+    if len(name) > MAX_ADMIN_USERNAME_LENGTH:
+        raise HTTPException(
+            400,
+            f"Username must be {MAX_ADMIN_USERNAME_LENGTH} characters or fewer",
+        )
+    if not ADMIN_USERNAME_PATTERN.match(name):
+        raise HTTPException(
+            400,
+            "Username may only contain letters, digits, dot, underscore, or hyphen",
+        )
+    if name == DEFAULT_ADMIN_USERNAME:
+        raise HTTPException(400, "New username must differ from the default")
+    return name
+
+
+def _verify_admin_token(request: Request, allow_pending: bool = False) -> str:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(401, "Not authenticated")
-    if auth[7:] not in admin_tokens:
+    token = auth[7:]
+    if token not in admin_tokens:
         raise HTTPException(401, "Invalid or expired token")
-    return auth[7:]
+    if not allow_pending and token in admin_tokens_pending_password_change:
+        raise HTTPException(403, "Password change required")
+    return token
+
+
+def verify_admin(request: Request):
+    return _verify_admin_token(request, allow_pending=False)
+
+
+def verify_admin_allow_pending(request: Request):
+    return _verify_admin_token(request, allow_pending=True)
 
 
 
@@ -307,16 +421,81 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.post("/admin/login", tags=["Admin"])
 async def admin_login(req: LoginRequest):
-    if req.username == ADMIN_USERNAME and req.password == ADMIN_PASSWORD:
-        token = secrets.token_hex(32)
-        admin_tokens.add(token)
-        return {"token": token}
-    raise HTTPException(401, "Invalid credentials")
+    if not _verify_admin_credentials(req.username, req.password):
+        raise HTTPException(401, "Invalid credentials")
+    token = secrets.token_hex(32)
+    admin_tokens.add(token)
+    must_change = _credentials_change_required()
+    if must_change:
+        admin_tokens_pending_password_change.add(token)
+    return {
+        "token": token,
+        "must_change_password": must_change,
+        "must_change_credentials": must_change,
+        "current_username": _resolved_admin_username(),
+    }
 
 
 @app.get("/admin/verify", tags=["Admin"])
-async def admin_verify(token: str = Depends(verify_admin)):
-    return {"valid": True}
+async def admin_verify(token: str = Depends(verify_admin_allow_pending)):
+    pending = token in admin_tokens_pending_password_change
+    return {
+        "valid": True,
+        "must_change_password": pending,
+        "must_change_credentials": pending,
+        "current_username": _resolved_admin_username(),
+    }
+
+
+@app.post("/admin/password", tags=["Admin"])
+async def admin_change_credentials(
+    req: CredentialChangeRequest,
+    token: str = Depends(verify_admin_allow_pending),
+):
+    if not _verify_admin_credentials(_resolved_admin_username(), req.current_password):
+        raise HTTPException(401, "Current password is incorrect")
+
+    forced = _credentials_change_required()
+    raw_new_username = (req.new_username or "").strip()
+    new_username: Optional[str] = None
+    if forced or raw_new_username:
+        if forced and not raw_new_username:
+            raise HTTPException(400, "New username is required for first-time setup")
+        new_username = _validate_new_admin_username(raw_new_username)
+        if new_username == _resolved_admin_username():
+            raise HTTPException(400, "New username must differ from the current username")
+
+    new_pw = req.new_password or ""
+    if len(new_pw) < MIN_ADMIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            400,
+            f"New password must be at least {MIN_ADMIN_PASSWORD_LENGTH} characters",
+        )
+    if new_pw == DEFAULT_ADMIN_PASSWORD:
+        raise HTTPException(400, "New password must differ from the default")
+    if new_pw == req.current_password:
+        raise HTTPException(400, "New password must differ from the current password")
+
+    encoded = _hash_admin_password(new_pw)
+    with runtime_settings_lock:
+        runtime_settings["admin_password_hash"] = encoded
+        if new_username is not None:
+            runtime_settings["admin_username"] = new_username
+    _save_runtime_settings()
+
+    # Invalidate every other admin session — the operator just rotated credentials.
+    other_tokens = [t for t in admin_tokens if t != token]
+    for stale in other_tokens:
+        admin_tokens.discard(stale)
+        admin_tokens_pending_password_change.discard(stale)
+    admin_tokens_pending_password_change.discard(token)
+    logger.info("Admin credentials updated; previous tokens invalidated")
+    return {
+        "ok": True,
+        "must_change_password": False,
+        "must_change_credentials": False,
+        "current_username": _resolved_admin_username(),
+    }
 
 
 
@@ -570,7 +749,9 @@ def _lecture_tool_hint() -> str:
         f"{names}\n"
         "Call `search_lectures` first for any content question — these lectures "
         "are the student's course of record and take precedence over your "
-        "training knowledge."
+        "training knowledge. Only skip the tool for pure greetings or small talk. "
+        "When the tool returns lecture material, summarize it naturally and cite "
+        "slide numbers when relevant."
     )
 
 

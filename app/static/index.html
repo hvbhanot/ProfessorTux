@@ -707,6 +707,15 @@ button,input,textarea{font:inherit}
   cursor:not-allowed;
 }
 
+.composer-notice{
+  margin:10px 4px 0;
+  text-align:center;
+  color:var(--text-muted);
+  font-size:12px;
+  line-height:1.4;
+  letter-spacing:.01em;
+}
+
 .toast{
   position:fixed;
   left:50%;
@@ -820,6 +829,7 @@ button,input,textarea{font:inherit}
         <textarea class="chat-input" id="chatInput" rows="1" placeholder="Waiting for the teaching engine..." disabled></textarea>
         <button class="send-btn" id="sendBtn" type="button" disabled>Send</button>
       </div>
+      <p class="composer-notice">Conversations in this interface are recorded and may be reviewed by course staff.</p>
     </div>
   </footer>
 </div>

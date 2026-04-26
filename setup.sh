@@ -98,21 +98,52 @@ cat <<EOF
 
 $(printf '\033[1;32m')✔ Setup complete.$(printf '\033[0m')
 
-  Start Professor Tux:
-    source $VENV_DIR/bin/activate
-    python run.py
-
-  Or without activating the venv:
-    $VENV_PY run.py
-
   Access points after launch:
     Student UI:  http://localhost:8000/
     Admin UI:    http://localhost:8000/admin
     Docs:        http://localhost:8000/docs
     API Docs:    http://localhost:8000/api/docs
 
-  Default admin credentials:
+  Bootstrap admin credentials (one-shot, used to access /admin the first
+  time after every server start):
     username: admin
     password: professortux
 
+  The admin panel will immediately force you to set a fresh username and
+  password for this server lifetime. Credentials are kept in memory only
+  and reset on every restart — plan for this in your runbook. Override the
+  bootstrap defaults with ADMIN_USERNAME and ADMIN_PASSWORD in .env.
+
 EOF
+
+# ── 8. Auto-start (uses the venv Python — no manual `source` needed) ──
+START_TUX="${START_TUX:-}"
+if [[ -z "$START_TUX" ]]; then
+  if [[ -t 0 ]]; then
+    read -r -p "Start Professor Tux now? [Y/n] " reply
+    if [[ "$reply" =~ ^[Nn] ]]; then
+      START_TUX="no"
+    else
+      START_TUX="yes"
+    fi
+  else
+    # Non-interactive (piped, CI). Skip auto-start unless explicitly opted in.
+    START_TUX="no"
+  fi
+fi
+
+if [[ "$START_TUX" == "yes" ]]; then
+  info "Starting Professor Tux (Ctrl+C to stop)"
+  exec "$VENV_PY" run.py
+else
+  cat <<EOF
+
+  To start later:
+    $VENV_PY run.py
+  (no activation required — the venv Python is used directly)
+
+  To activate the venv in your current shell:
+    source $VENV_DIR/bin/activate
+
+EOF
+fi

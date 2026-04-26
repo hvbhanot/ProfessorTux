@@ -344,6 +344,58 @@ body::before{
   letter-spacing:0;
 }
 
+.login-note.hidden,
+.login-back.hidden{display:none}
+
+.login-note{
+  margin:0 0 18px;
+  padding:10px 12px;
+  border:1px solid var(--accent);
+  border-radius:12px;
+  background:var(--accent-dim);
+  color:var(--accent);
+  font:500 11px/1.5 var(--font-mono);
+  letter-spacing:.04em;
+  text-align:left;
+}
+
+.login-help{
+  margin-top:12px;
+  font:400 11px/1.5 var(--font-mono);
+  color:var(--text-muted);
+  letter-spacing:.04em;
+}
+
+.login-back{
+  display:inline-block;
+  margin-top:14px;
+  padding:6px 12px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  background:transparent;
+  color:var(--text-secondary);
+  font:600 10px/1 var(--font-mono);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+
+.login-back:hover{border-color:var(--accent-red);color:var(--accent-red)}
+
+.change-pw-btn{
+  padding:5px 12px;
+  background:transparent;
+  border:1px solid var(--border);
+  color:var(--text-secondary);
+  font-family:var(--font-mono);
+  font-size:11px;
+  cursor:pointer;
+  transition:all .15s;
+  text-transform:uppercase;
+  letter-spacing:1px;
+}
+.change-pw-btn:hover{border-color:var(--accent);color:var(--accent)}
+
 .admin{
   min-height:100vh;
   background:transparent;
@@ -1098,6 +1150,34 @@ body::before{
   </div>
 </div>
 
+<!-- CREDENTIAL CHANGE -->
+<div class="login-overlay hidden" id="passwordOverlay">
+  <div class="login-box">
+    <img class="login-logo" src="/static/logo.png" alt="Professor Tux">
+    <div class="login-title" id="pwTitle">Change Admin Credentials</div>
+    <div class="login-sub" id="pwSub">Rotate Credentials</div>
+    <div class="login-note hidden" id="pwForcedNote">
+      First-time setup: the default credentials are still active. Choose a new username and password to continue.
+    </div>
+    <input class="login-field" id="pwNewUser" type="text" placeholder="New username (leave blank to keep current)"
+           autocomplete="username"
+           onkeydown="if(event.key==='Enter')document.getElementById('pwCurrent').focus()">
+    <input class="login-field" id="pwCurrent" type="password" placeholder="Current password"
+           autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')document.getElementById('pwNew').focus()">
+    <input class="login-field" id="pwNew" type="password" placeholder="New password (min 8 chars)"
+           autocomplete="new-password"
+           onkeydown="if(event.key==='Enter')document.getElementById('pwConfirm').focus()">
+    <input class="login-field" id="pwConfirm" type="password" placeholder="Confirm new password"
+           autocomplete="new-password"
+           onkeydown="if(event.key==='Enter')submitPasswordChange()">
+    <button class="login-btn" onclick="submitPasswordChange()">Update Credentials</button>
+    <div class="login-error" id="pwError"></div>
+    <div class="login-help">After saving, every other admin session is signed out.</div>
+    <button class="login-back" id="pwCancel" onclick="cancelPasswordChange()">Cancel</button>
+  </div>
+</div>
+
 <!-- ADMIN -->
 <div class="admin" id="adminPanel">
   <div class="topbar">
@@ -1110,6 +1190,7 @@ body::before{
         <div class="status-dot loading" id="statusDot"></div>
         <span id="statusText">Checking…</span>
       </div>
+      <button class="change-pw-btn" onclick="openPasswordChange(false)">Change Credentials</button>
       <button class="logout-btn" onclick="logout()">Logout</button>
     </div>
   </div>
@@ -1310,19 +1391,170 @@ let savedWebSearchBaseUrl = 'https://ollama.com';
 let webSearchApiKeySource = '';
 
 // ── Auth ──────────────────────────────────────────
+let credentialChangeForced = false;
+let cachedLoginPassword = '';
+let cachedAdminUsername = '';
+
 function attemptLogin() {
   var user = document.getElementById('loginUser').value.trim();
   var pass = document.getElementById('loginPass').value;
   fetch(API + '/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:user,password:pass}) })
     .then(function(r) { if(!r.ok) throw 0; return r.json(); })
-    .then(function(d) { sessionStorage.setItem('admin_token',d.token); show(); })
+    .then(function(d) {
+      sessionStorage.setItem('admin_token', d.token);
+      cachedLoginPassword = pass;
+      cachedAdminUsername = d.current_username || user;
+      document.getElementById('loginPass').value = '';
+      document.getElementById('loginError').textContent = '';
+      if (d.must_change_credentials || d.must_change_password) {
+        forceCredentialChange();
+      } else {
+        cachedLoginPassword = '';
+        show();
+      }
+    })
     .catch(function() { document.getElementById('loginError').textContent='Invalid credentials'; });
 }
-function logout() { sessionStorage.removeItem('admin_token'); hide(); }
+function logout() {
+  sessionStorage.removeItem('admin_token');
+  cachedLoginPassword = '';
+  cachedAdminUsername = '';
+  credentialChangeForced = false;
+  hideCredentialOverlay();
+  hide();
+}
 function show() { document.getElementById('loginOverlay').classList.add('hidden'); document.getElementById('adminPanel').classList.add('visible'); loadDashboard(); }
 function hide() { document.getElementById('loginOverlay').classList.remove('hidden'); document.getElementById('adminPanel').classList.remove('visible'); }
 function authH() { return { 'Authorization':'Bearer ' + sessionStorage.getItem('admin_token'), 'Content-Type':'application/json' }; }
-if (sessionStorage.getItem('admin_token')) { fetch(API + '/admin/verify',{headers:authH()}).then(function(r){if(r.ok)show();}); }
+
+function forceCredentialChange() {
+  credentialChangeForced = true;
+  var overlay = document.getElementById('passwordOverlay');
+  var current = document.getElementById('pwCurrent');
+  var newUser = document.getElementById('pwNewUser');
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('adminPanel').classList.remove('visible');
+  document.getElementById('pwForcedNote').classList.remove('hidden');
+  document.getElementById('pwCancel').classList.add('hidden');
+  document.getElementById('pwTitle').textContent = 'Set Admin Credentials';
+  document.getElementById('pwSub').textContent = 'First-Time Setup';
+  newUser.value = '';
+  newUser.placeholder = 'New username (must differ from "admin")';
+  current.value = cachedLoginPassword || '';
+  current.readOnly = !!cachedLoginPassword;
+  document.getElementById('pwNew').value = '';
+  document.getElementById('pwConfirm').value = '';
+  document.getElementById('pwError').textContent = '';
+  overlay.classList.remove('hidden');
+  newUser.focus();
+}
+
+function openPasswordChange(forced) {
+  if (forced) { forceCredentialChange(); return; }
+  credentialChangeForced = false;
+  var overlay = document.getElementById('passwordOverlay');
+  document.getElementById('pwForcedNote').classList.add('hidden');
+  document.getElementById('pwCancel').classList.remove('hidden');
+  document.getElementById('pwTitle').textContent = 'Change Admin Credentials';
+  document.getElementById('pwSub').textContent = 'Rotate Credentials';
+  var newUser = document.getElementById('pwNewUser');
+  newUser.value = '';
+  newUser.placeholder = cachedAdminUsername
+    ? 'New username (current: ' + cachedAdminUsername + '; leave blank to keep)'
+    : 'New username (leave blank to keep current)';
+  var current = document.getElementById('pwCurrent');
+  current.value = '';
+  current.readOnly = false;
+  document.getElementById('pwNew').value = '';
+  document.getElementById('pwConfirm').value = '';
+  document.getElementById('pwError').textContent = '';
+  overlay.classList.remove('hidden');
+  current.focus();
+}
+
+function cancelPasswordChange() {
+  if (credentialChangeForced) return;
+  hideCredentialOverlay();
+}
+
+function hideCredentialOverlay() {
+  document.getElementById('passwordOverlay').classList.add('hidden');
+  document.getElementById('pwNewUser').value = '';
+  document.getElementById('pwCurrent').value = '';
+  document.getElementById('pwNew').value = '';
+  document.getElementById('pwConfirm').value = '';
+  document.getElementById('pwError').textContent = '';
+}
+
+function submitPasswordChange() {
+  var newUser = document.getElementById('pwNewUser').value.trim();
+  var current = document.getElementById('pwCurrent').value;
+  var next = document.getElementById('pwNew').value;
+  var confirmPw = document.getElementById('pwConfirm').value;
+  var errEl = document.getElementById('pwError');
+  errEl.textContent = '';
+
+  if (!current) { errEl.textContent = 'Current password is required.'; return; }
+  if (credentialChangeForced && !newUser) {
+    errEl.textContent = 'New username is required for first-time setup.';
+    return;
+  }
+  if (newUser) {
+    if (newUser.length < 3) { errEl.textContent = 'Username must be at least 3 characters.'; return; }
+    if (!/^[A-Za-z0-9._-]+$/.test(newUser)) {
+      errEl.textContent = 'Username may only contain letters, digits, dot, underscore, or hyphen.';
+      return;
+    }
+    if (newUser === 'admin') { errEl.textContent = 'Pick a username other than the default.'; return; }
+  }
+  if (next.length < 8) { errEl.textContent = 'New password must be at least 8 characters.'; return; }
+  if (next === 'professortux') { errEl.textContent = 'Pick something other than the default password.'; return; }
+  if (next !== confirmPw) { errEl.textContent = 'New passwords do not match.'; return; }
+  if (next === current) { errEl.textContent = 'New password must differ from the current one.'; return; }
+
+  fetch(API + '/admin/password', {
+    method: 'POST',
+    headers: authH(),
+    body: JSON.stringify({
+      current_password: current,
+      new_password: next,
+      new_username: newUser
+    })
+  })
+    .then(function(r) {
+      return r.json().then(function(body) { return { ok: r.ok, body: body }; });
+    })
+    .then(function(res) {
+      if (!res.ok) {
+        errEl.textContent = (res.body && res.body.detail) ? res.body.detail : 'Could not update credentials.';
+        return;
+      }
+      cachedLoginPassword = '';
+      cachedAdminUsername = (res.body && res.body.current_username) || cachedAdminUsername;
+      credentialChangeForced = false;
+      hideCredentialOverlay();
+      show();
+    })
+    .catch(function() { errEl.textContent = 'Network error. Try again.'; });
+}
+
+if (sessionStorage.getItem('admin_token')) {
+  fetch(API + '/admin/verify', { headers: authH() })
+    .then(function(r) { if(!r.ok) throw 0; return r.json(); })
+    .then(function(d) {
+      cachedAdminUsername = d.current_username || cachedAdminUsername;
+      if (d.must_change_credentials || d.must_change_password) {
+        cachedLoginPassword = '';
+        forceCredentialChange();
+      } else {
+        show();
+      }
+    })
+    .catch(function() {
+      sessionStorage.removeItem('admin_token');
+      hide();
+    });
+}
 
 // ── Dashboard ─────────────────────────────────────
 async function loadDashboard() { await Promise.all([checkHealth(), loadModes(), loadFiles(), loadLogs(), loadModelStatus()]); await loadConfig(); }
