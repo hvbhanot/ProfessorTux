@@ -209,16 +209,6 @@ Core variables from `.env.example`:
 
 Additional retrieval variables are handled in `app/rag.py`.
 
-## Terminal client
-
-There is also a CLI client:
-
-```bash
-.venv/bin/python client.py
-```
-
-Use it when you want to hit the backend without the browser UI.
-
 ## Troubleshooting
 
 ### Student UI says no model is ready
