@@ -385,6 +385,15 @@ pre{
   letter-spacing:-0.02em;
 }
 
+.section h4{
+  margin:18px 0 6px;
+  font-size:14px;
+  line-height:1.25;
+  letter-spacing:-0.01em;
+  color:var(--text);
+  font-weight:600;
+}
+
 .section p,
 .section li{
   color:var(--text-soft);
@@ -1472,6 +1481,47 @@ OLLAMA_HOST=0.0.0.0:11434</code></pre></div>
           <li>On the Professor Tux host, set <code>OLLAMA_BASE_URL=http://&lt;jetson-ip&gt;:11434</code> in <code>.env</code> (or in <em>Admin → Ollama API URL</em>).</li>
           <li>Keep both machines on the same trusted LAN. Ollama has no built-in auth, so do not expose the Jetson's <code>11434</code> port to the public internet.</li>
         </ul>
+
+        <h3>Reducing latency in the Nano + thin-client split</h3>
+        <p>When the model lives on the Jetson and Professor Tux runs on another box (a laptop, mini-PC, or "thin client"), perceived latency comes from three places: the Nano's tokens-per-second, the network hop between the two machines, and the prompt size. Tune them in this order — earlier items have far larger impact than later ones.</p>
+
+        <h4>1. Confirm the Nano is using its GPU</h4>
+        <p>This is by far the biggest variable. If layers are not offloaded, you are running on the Nano's CPU and tokens-per-second drops 5–10×. While a chat is generating, on the Nano run:</p>
+        <div class="code-block"><pre><code>nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv -l 1</code></pre></div>
+        <ul>
+          <li>If <code>utilization.gpu</code> stays under ~50%, the model is CPU-bound — pick a smaller quantization or smaller model.</li>
+          <li>If <code>memory.used</code> sits at the cap, the model is swapping — drop a tier (e.g. 3B → 1.5B, or Q4 → Q3).</li>
+          <li>Check Ollama's startup log for <code>offloaded N/N layers to GPU</code>. Anything less than full offload means the rest is on CPU.</li>
+        </ul>
+
+        <h4>2. Pick a quantized model that fits</h4>
+        <p>See the model table above. On an Orin Nano 8GB the <strong>sweet spot is a 3B Q4 model</strong> (<code>llama3.2:3b-instruct-q4_K_M</code> or <code>qwen2.5:3b-instruct-q4_K_M</code>). On the original 4 GB Nano, drop to 1.5B Q4 — anything larger will swap. Quantization is the single biggest knob for tokens-per-second.</p>
+
+        <h4>3. Keep the model warm</h4>
+        <p>The repo default <code>OLLAMA_KEEP_ALIVE=5m</code> unloads the model after five idle minutes, so the next first-token after a quiet stretch pays the full reload cost (5–15 s on a Nano). Bump it on the Jetson:</p>
+        <div class="code-block"><pre><code>OLLAMA_KEEP_ALIVE=24h</code></pre></div>
+
+        <h4>4. Pin the network path</h4>
+        <p>RTT between the thin client and the Nano should be 5–30 ms on a wired LAN. If you measure 100+ ms, latency is being added by something:</p>
+        <ul>
+          <li>Use wired ethernet on both machines, ideally the same switch. Wi-Fi adds 10–40 ms of jitter.</li>
+          <li>Use a static IP for the Jetson and put it in <code>OLLAMA_BASE_URL</code> directly. mDNS resolution can stall.</li>
+          <li>Avoid Tailscale / Wireguard / VPN tunnels for this hop — they add 20–50 ms per RTT and the streaming responses amplify that.</li>
+        </ul>
+
+        <h4>5. Shrink the prompt where it makes sense</h4>
+        <p>Smaller prompt = smaller KV cache = faster first token <em>and</em> faster steady-state. The biggest wins come from RAG settings, since lecture context can balloon prompt length:</p>
+        <ul>
+          <li>Drop <code>TOP_K_RESULTS</code> from 5 to 3 in <code>.env</code> on the thin client.</li>
+          <li>Drop <code>CHUNK_SIZE</code> from 500 to 350 (and re-upload lectures so they re-chunk).</li>
+          <li>Disable lecture context in admin for modes where it is not needed. Recall mode already skips RAG; Custom mode also sends a minimal prompt.</li>
+        </ul>
+
+        <h4>6. Stream, do not block</h4>
+        <p>The web UI already calls <code>POST /chat/stream</code>, so the user sees tokens as they generate even when total time is slow. Only the blocking <code>POST /chat</code> endpoint waits for the full response — useful for tests, not for users.</p>
+
+        <h4>7. Keep FastAPI on the thin client, not the Nano</h4>
+        <p>Embedding the lectures with <code>all-MiniLM-L6-v2</code> is CPU-friendly and runs fine on a modest thin client. Putting Professor Tux on the Nano steals shared memory the model needs and tends to push the model onto CPU. The current split — FastAPI on the thin client, Ollama on the Nano — is the right architecture; do not flip it.</p>
       </section>
 
       <section class="section" id="troubleshooting">
